@@ -1,6 +1,6 @@
 # GitHub Actions authentication (OIDC, no stored AWS keys):
 #   - the account's GitHub OIDC identity provider (created here only if the account has none)
-#   - role github-actions-<project>-<initials>-apps : Apps repo pushes images and deploys ECS
+#   - role github-actions-<project>-<initials>-apps : Apps repo pushes images and deploys to Elastic Beanstalk
 #   - role github-actions-<project>-<initials>-infra: Infra repo runs Terraform for environments/dev
 # Both trust only the main branch of their repository.
 module "naming" {
@@ -9,6 +9,8 @@ module "naming" {
   project_name     = var.project_name
   student_initials = var.student_initials
   environment      = var.environment
+  aws_account_id   = var.aws_account_id
+  aws_region       = var.aws_region
 }
 
 data "aws_partition" "current" {}
@@ -89,7 +91,7 @@ data "aws_iam_policy_document" "github_trust" {
 
 resource "aws_iam_role" "apps" {
   name                 = module.naming.github_role_names.apps
-  description          = "GitHub Actions (${var.github_owner}/${var.apps_repo}, main): push images, deploy ECS services"
+  description          = "GitHub Actions (${var.github_owner}/${var.apps_repo}, main): push images, deploy Elastic Beanstalk"
   assume_role_policy   = data.aws_iam_policy_document.github_trust["apps"].json
   max_session_duration = 3600
 }
@@ -120,34 +122,10 @@ data "aws_iam_policy_document" "apps" {
     ]
   }
 
-  # Task definitions do not support resource-level permissions for these actions.
   statement {
-    sid       = "EcsTaskDefinitions"
-    actions   = ["ecs:DescribeTaskDefinition", "ecs:RegisterTaskDefinition"]
-    resources = ["*"]
-  }
-
-  statement {
-    sid     = "EcsServices"
-    actions = ["ecs:DescribeServices", "ecs:UpdateService"]
-    resources = [
-      for name in values(module.naming.service_names) :
-      "arn:${local.partition}:ecs:${local.region}:${local.account}:service/${module.naming.cluster_name}/${name}"
-    ]
-  }
-
-  # A new task definition revision keeps the execution and task roles; registering it
-  # requires passing them to ECS.
-  statement {
-    sid       = "PassTaskRoles"
-    actions   = ["iam:PassRole"]
-    resources = [local.app_role_arn_pattern]
-
-    condition {
-      test     = "StringEquals"
-      variable = "iam:PassedToService"
-      values   = ["ecs-tasks.amazonaws.com"]
-    }
+    sid       = "UploadBundles"
+    actions   = ["s3:PutObject", "s3:GetObject"]
+    resources = ["arn:${local.partition}:s3:::${module.naming.bundle_bucket_name}/*"]
   }
 }
 
@@ -155,6 +133,14 @@ resource "aws_iam_role_policy" "apps" {
   name   = "deploy"
   role   = aws_iam_role.apps.id
   policy = data.aws_iam_policy_document.apps.json
+}
+
+# Deploying an application version makes Elastic Beanstalk act with the caller's rights on
+# the resources behind the environment (CloudFormation, Auto Scaling, EC2, its S3 bucket).
+# AWS's managed policy covers exactly that set; it is broad, so use a dedicated account.
+resource "aws_iam_role_policy_attachment" "apps_beanstalk" {
+  role       = aws_iam_role.apps.name
+  policy_arn = "arn:${local.partition}:iam::aws:policy/AdministratorAccess-AWSElasticBeanstalk"
 }
 
 # ----------------------------------------------------------------------------- Infra role
@@ -166,9 +152,9 @@ resource "aws_iam_role" "infra" {
   max_session_duration = 3600
 }
 
-# PowerUserAccess covers every non-IAM service Terraform manages (VPC, ELB, ECS, ECR,
-# CloudFront, CloudWatch Logs, S3 state). It grants no IAM role management, so that is
-# added below, limited to roles and policies named <project>-<initials>-<env>-*.
+# PowerUserAccess covers every non-IAM service Terraform manages (VPC, Elastic Beanstalk,
+# EC2, ECR, CloudFront, CloudWatch Logs, S3). It grants no IAM role management, so that is
+# added below, limited to roles, instance profiles and policies named <project>-<initials>-<env>-*.
 resource "aws_iam_role_policy_attachment" "infra_power_user" {
   role       = aws_iam_role.infra.name
   policy_arn = "arn:${local.partition}:iam::aws:policy/PowerUserAccess"
@@ -197,6 +183,20 @@ data "aws_iam_policy_document" "infra_iam" {
       "iam:UpdateRoleDescription",
     ]
     resources = [local.app_role_arn_pattern]
+  }
+
+  statement {
+    sid = "ManageProjectInstanceProfiles"
+    actions = [
+      "iam:AddRoleToInstanceProfile",
+      "iam:CreateInstanceProfile",
+      "iam:DeleteInstanceProfile",
+      "iam:GetInstanceProfile",
+      "iam:RemoveRoleFromInstanceProfile",
+      "iam:TagInstanceProfile",
+      "iam:UntagInstanceProfile",
+    ]
+    resources = ["arn:${local.partition}:iam::${local.account}:instance-profile/${module.naming.iam_role_prefix}*"]
   }
 
   # Extension point: customer-managed policies for later parts (e.g. S3 read for P2).

@@ -4,7 +4,7 @@ variable "name" {
 }
 
 variable "origin_domain_name" {
-  description = "DNS name of the load balancer that CloudFront forwards to."
+  description = "Host name CloudFront forwards to (the Elastic Beanstalk environment)."
   type        = string
 }
 

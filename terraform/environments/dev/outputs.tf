@@ -8,14 +8,29 @@ output "backend_url" {
   value       = "${local.app_url}/api/data"
 }
 
+output "bundle_bucket_name" {
+  description = "S3 bucket for deployment bundles (GitHub variable EB_BUNDLE_BUCKET in the Apps repository)."
+  value       = module.beanstalk.bundle_bucket_name
+}
+
 output "cloudfront_distribution_id" {
   description = "ID of the CloudFront distribution (null when enable_cdn = false)."
   value       = one(module.cdn[*].distribution_id)
 }
 
-output "ecr_registry" {
-  description = "ECR registry host (images: <registry>/<repository>:<tag>)."
-  value       = module.container_registry.registry
+output "eb_application_name" {
+  description = "Elastic Beanstalk application (GitHub variable EB_APPLICATION)."
+  value       = module.beanstalk.application_name
+}
+
+output "eb_environment_name" {
+  description = "Elastic Beanstalk environment (GitHub variable EB_ENVIRONMENT)."
+  value       = module.beanstalk.environment_name
+}
+
+output "eb_url" {
+  description = "Direct HTTP URL of the instance (CloudFront forwards to it)."
+  value       = "http://${module.beanstalk.cname}"
 }
 
 output "ecr_repository_urls" {
@@ -23,22 +38,7 @@ output "ecr_repository_urls" {
   value       = module.container_registry.repository_urls
 }
 
-output "ecs_cluster_name" {
-  description = "ECS cluster name (GitHub variable ECS_CLUSTER in the Apps repository)."
-  value       = module.ecs_services.cluster_name
-}
-
-output "ecs_service_names" {
-  description = "ECS service names by app."
-  value       = module.ecs_services.service_names
-}
-
-output "log_group_names" {
-  description = "CloudWatch log groups by app (aws logs tail <name> --follow)."
-  value       = module.ecs_services.log_group_names
-}
-
-output "task_role_name" {
-  description = "IAM role of the running containers; attach policies to it for new resources."
-  value       = module.ecs_services.task_role_name
+output "instance_role_name" {
+  description = "IAM role of the EC2 instance; attach policies to it for new resources."
+  value       = module.beanstalk.instance_role_name
 }

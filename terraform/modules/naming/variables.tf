@@ -1,3 +1,13 @@
+variable "aws_account_id" {
+  description = "AWS account ID (makes globally unique names unique)."
+  type        = string
+}
+
+variable "aws_region" {
+  description = "AWS region (part of the Elastic Beanstalk host name)."
+  type        = string
+}
+
 variable "environment" {
   description = "Environment name, e.g. dev."
   type        = string

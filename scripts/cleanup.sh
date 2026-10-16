@@ -2,7 +2,7 @@
 # =============================================================================
 # CC2026 cleanup (AWS): removes what you created, one deliberate step at a time.
 #
-#   Step 1  terraform destroy of the application infrastructure (VPC, ALB, CloudFront, ECR, ECS)
+#   Step 1  terraform destroy of the application infrastructure (VPC, ECR, Elastic Beanstalk, CloudFront)
 #   Step 2  (optional) GitHub Actions roles (and the GitHub OIDC provider, only if bootstrap created it)
 #   Step 3  (optional) Terraform state bucket (only after steps 1 and 2 succeeded)
 #
@@ -123,6 +123,7 @@ delete_state_bucket() {
   aws s3api delete-bucket --bucket "$STATE_BUCKET"
   rm -f "$TF_DIR/backend.hcl" "$BOOTSTRAP_TF_DIR/backend.hcl"
   ok "Bucket deleted. Run ./bootstrap/bootstrap.sh to start again."
+  warn "Elastic Beanstalk keeps its own bucket elasticbeanstalk-$AWS_REGION-$ACCOUNT_ID (protected by AWS; a few KB, cents per year). Delete it in the S3 console if you want: first remove its bucket policy."
 }
 
 main() {

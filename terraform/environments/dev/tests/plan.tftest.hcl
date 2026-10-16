@@ -5,10 +5,6 @@ mock_provider "aws" {
     defaults = { names = ["eu-central-1a", "eu-central-1b", "eu-central-1c"] }
   }
 
-  mock_data "aws_region" {
-    defaults = { region = "eu-central-1" }
-  }
-
   mock_data "aws_partition" {
     defaults = { partition = "aws" }
   }
@@ -17,32 +13,13 @@ mock_provider "aws" {
     defaults = { json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}" }
   }
 
-  # ARNs and URLs are parsed or validated downstream, so mocks must be well-formed.
-  mock_resource "aws_lb" {
-    defaults = {
-      arn      = "arn:aws:elasticloadbalancing:eu-central-1:123456789012:loadbalancer/app/cc2026-agi-dev/0123456789abcdef"
-      dns_name = "cc2026-agi-dev-123456789.eu-central-1.elb.amazonaws.com"
-    }
+  mock_data "aws_elastic_beanstalk_solution_stack" {
+    defaults = { name = "64bit Amazon Linux 2023 v4.13.10 running Docker" }
   }
 
-  mock_resource "aws_lb_target_group" {
-    defaults = { arn = "arn:aws:elasticloadbalancing:eu-central-1:123456789012:targetgroup/cc2026-agi-dev-xx/0123456789abcdef" }
-  }
-
-  mock_resource "aws_lb_listener" {
-    defaults = { arn = "arn:aws:elasticloadbalancing:eu-central-1:123456789012:listener/app/cc2026-agi-dev/0123456789abcdef/0123456789abcdef" }
-  }
-
+  # ARNs are validated downstream, so mocks must be well-formed.
   mock_resource "aws_iam_role" {
     defaults = { arn = "arn:aws:iam::123456789012:role/cc2026-agi-dev-mock" }
-  }
-
-  mock_resource "aws_ecs_cluster" {
-    defaults = { id = "arn:aws:ecs:eu-central-1:123456789012:cluster/cc2026-agi-dev" }
-  }
-
-  mock_resource "aws_ecs_task_definition" {
-    defaults = { arn = "arn:aws:ecs:eu-central-1:123456789012:task-definition/cc2026-agi-dev-mock:1" }
   }
 
   mock_resource "aws_cloudfront_distribution" {
@@ -60,6 +37,12 @@ override_resource {
   values = { repository_url = "123456789012.dkr.ecr.eu-central-1.amazonaws.com/cc2026-agi-dev/frontend" }
 }
 
+# Mocked resources get random computed values; pin the host name Elastic Beanstalk assigns.
+override_resource {
+  target = module.beanstalk.aws_elastic_beanstalk_environment.main
+  values = { cname = "cc2026-agi-dev-479d89.eu-central-1.elasticbeanstalk.com" }
+}
+
 variables {
   student_initials = "agi"
   aws_account_id   = "123456789012"
@@ -74,27 +57,22 @@ run "names_follow_convention" {
   }
 
   assert {
-    condition     = output.ecs_cluster_name == "cc2026-agi-dev"
-    error_message = "Unexpected cluster name: ${output.ecs_cluster_name}"
+    condition     = module.naming.eb_cname_prefix == "cc2026-agi-dev-479d89"
+    error_message = "Unexpected Elastic Beanstalk host name prefix: ${module.naming.eb_cname_prefix}"
   }
 
   assert {
-    condition     = output.ecr_repository_urls.backend == "123456789012.dkr.ecr.eu-central-1.amazonaws.com/cc2026-agi-dev/backend"
-    error_message = "Unexpected backend repository: ${output.ecr_repository_urls.backend}"
+    condition     = module.naming.eb_cname == "${module.naming.eb_cname_prefix}.eu-central-1.elasticbeanstalk.com"
+    error_message = "Unexpected Elastic Beanstalk host name: ${module.naming.eb_cname}"
   }
 
   assert {
-    condition     = output.ecr_registry == "123456789012.dkr.ecr.eu-central-1.amazonaws.com"
-    error_message = "Unexpected registry host: ${output.ecr_registry}"
-  }
-
-  assert {
-    condition     = length("${module.naming.name_base}-fe") <= 32
-    error_message = "Target group names must be at most 32 characters."
+    condition     = module.naming.bundle_bucket_name == "cc2026-agi-dev-bundles-123456789012"
+    error_message = "Unexpected bundle bucket name: ${module.naming.bundle_bucket_name}"
   }
 }
 
-run "apps_are_wired_together" {
+run "app_is_wired_through_cloudfront" {
   command = apply # against the mocked provider only
 
   assert {
@@ -103,27 +81,12 @@ run "apps_are_wired_together" {
   }
 
   assert {
-    condition     = module.ecs_services.container_environment.frontend.API_BASE_URL == "https://d111111abcdef8.cloudfront.net"
-    error_message = "The frontend must call the API through the CloudFront URL."
-  }
-
-  assert {
-    condition     = module.ecs_services.container_environment.backend.CORS_ORIGINS == "https://d111111abcdef8.cloudfront.net"
-    error_message = "The backend must allow the CloudFront origin (CORS)."
-  }
-
-  assert {
-    condition     = module.load_balancer.backend_paths[0] == toset(["/api/*", "/health"])
-    error_message = "/api/* and /health must be routed to the backend."
-  }
-
-  assert {
-    condition     = module.ecs_services.initial_images.backend == "123456789012.dkr.ecr.eu-central-1.amazonaws.com/cc2026-agi-dev/backend:latest"
-    error_message = "Terraform must create task definitions from the latest tag."
+    condition     = module.beanstalk.environment_properties.API_BASE_URL == output.app_url && module.beanstalk.environment_properties.CORS_ORIGINS == output.app_url
+    error_message = "The containers must use the CloudFront URL (frontend API base URL and backend CORS origin)."
   }
 }
 
-run "without_cdn_serves_alb_over_http" {
+run "without_cdn_serves_instance_over_http" {
   command = apply # against the mocked provider only
 
   variables {
@@ -136,14 +99,24 @@ run "without_cdn_serves_alb_over_http" {
   }
 
   assert {
-    condition     = output.app_url == "http://cc2026-agi-dev-123456789.eu-central-1.elb.amazonaws.com"
-    error_message = "Without CloudFront the app URL must be the load balancer: ${output.app_url}"
+    condition     = output.app_url == "http://${module.naming.eb_cname}"
+    error_message = "Without CloudFront the app URL must be the Elastic Beanstalk host name: ${output.app_url}"
   }
 
   assert {
-    condition     = module.ecs_services.container_environment.frontend.API_BASE_URL == output.app_url
-    error_message = "The frontend must call the API through the load balancer URL."
+    condition     = module.beanstalk.environment_properties.API_BASE_URL == output.app_url
+    error_message = "The frontend must call the API through the instance URL."
   }
+}
+
+run "rejects_arm_instance_types" {
+  command = plan
+
+  variables {
+    instance_type = "t4g.micro"
+  }
+
+  expect_failures = [var.instance_type]
 }
 
 run "rejects_bad_initials" {

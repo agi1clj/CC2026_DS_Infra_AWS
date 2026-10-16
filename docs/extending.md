@@ -17,10 +17,11 @@ Later project parts **add** services without restructuring what already works. N
 | Terraform modules | `terraform/modules/<service>/` | One folder per service: `main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`, same conventions as the existing modules |
 | Composition | `terraform/environments/dev/main.tf` | Add a `module "<service>"` block; wire outputs into other modules |
 | Names and tags | `terraform/modules/naming/outputs.tf` | Add one output per name, based on `local.name_base`. Tags are applied by the provider (`default_tags`) |
-| Container settings | `apps[*].environment` in `module "ecs_services"` | Add environment variables (e.g. a bucket name). Required ones (`API_BASE_URL`, `CORS_ORIGINS`) cannot be overridden. Re-run the Apps workflows afterwards |
-| Access between services | `module.ecs_services.task_role_name` | Attach an IAM policy to the task role (no keys). The AWS SDKs in the container use it automatically |
+| Container settings | `environment_properties` in `module "beanstalk"` | Add environment variables (e.g. a bucket name). Required ones (`API_BASE_URL`, `CORS_ORIGINS`) cannot be overridden. Applying restarts the containers. Secrets: use the `aws:elasticbeanstalk:application:environmentsecrets` namespace (Secrets Manager ARN), never plain properties |
+| Access between services | `module.beanstalk.instance_role_name` | Attach an IAM policy to the instance role (no keys). See the IMDS note below before using it from a container |
 | IAM names | `module.naming.iam_role_prefix` | Every IAM role/policy Terraform creates must start with `cc2026-<initials>-dev-`; the Infra CI role can manage nothing else |
 | Permissions of the Infra CI role | `terraform/bootstrap/main.tf` | `PowerUserAccess` already covers S3, Glue, Lambda, SNS, Cognito, Step Functions. Lambda/Glue need their own roles: name them with the prefix and they are covered. Re-run `bootstrap.sh` after changing this file |
+| Routing / new container | `deploy/aws/docker-compose.yml` + `deploy/aws/proxy/nginx.conf` (Apps repo) | Add a service and a `location` block; it ships with the next `deploy-aws` run |
 | Backend data | `backend/app/data.py` (Apps repo) | Implement `MeasurementSource` (e.g. reading S3 with boto3) and return it from `get_measurement_source()` |
 | Frontend config | `RuntimeConfig` in `frontend/src/types.ts` + `docker/40-runtime-config.sh` | Add public runtime values (e.g. the Cognito client ID). Never secrets |
 | Tests | `terraform/environments/dev/tests/*.tftest.hcl` | Add a `run` block asserting names/wiring with the mocked provider |
@@ -57,14 +58,14 @@ Later project parts **add** services without restructuring what already works. N
    }
    ```
 
-   In `module "ecs_services"`, for the backend app: `environment = { DATA_BUCKET = module.storage.name }`.
+   In `module "beanstalk"`: `environment_properties = { DATA_BUCKET = module.storage.name }`.
 
 4. **Access**: allow the backend containers to read the bucket:
 
    ```hcl
    resource "aws_iam_role_policy" "backend_reads_data" {
      name = "read-data"
-     role = module.ecs_services.task_role_name
+     role = module.beanstalk.instance_role_name
      policy = jsonencode({
        Version = "2012-10-17"
        Statement = [{
@@ -76,7 +77,9 @@ Later project parts **add** services without restructuring what already works. N
    }
    ```
 
-5. **Backend**: read `DATA_BUCKET` in `config.py` and use `boto3.client("s3")` in a new `MeasurementSource`. No credentials in code: the task role provides them.
+5. **Backend**: read `DATA_BUCKET` in `config.py` and use `boto3.client("s3")` in a new `MeasurementSource`. No credentials in code: the instance role provides them.
+
+   **IMDS note**: the instance requires IMDSv2 with a hop limit of 1, so containers on the Compose network cannot reach the instance role yet. Either run the backend with `network_mode: host` in `docker-compose.yml` (then the proxy must use `host.docker.internal:8000`), or add a platform hook in the bundle (`.platform/hooks/predeploy/`) that raises the hop limit: `aws ec2 modify-instance-metadata-options --instance-id <id> --http-put-response-hop-limit 2` (the instance role then needs `ec2:ModifyInstanceMetadataOptions` on itself).
 
 ## Glue (P2) in short
 

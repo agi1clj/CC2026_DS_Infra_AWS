@@ -1,6 +1,6 @@
-# CloudFront in front of the load balancer gives a public HTTPS URL
+# CloudFront in front of the Elastic Beanstalk instance gives a public HTTPS URL
 # (https://<id>.cloudfront.net) without buying a domain or managing certificates.
-# Caching is disabled: every request goes to the load balancer, like App Service in Azure.
+# Caching is disabled: every request goes to the instance, like App Service in Azure.
 data "aws_cloudfront_cache_policy" "disabled" {
   name = "Managed-CachingDisabled"
 }
@@ -17,7 +17,7 @@ resource "aws_cloudfront_distribution" "main" {
   http_version    = "http2and3"
 
   origin {
-    origin_id   = "alb"
+    origin_id   = "app"
     domain_name = var.origin_domain_name
 
     custom_origin_config {
@@ -29,7 +29,7 @@ resource "aws_cloudfront_distribution" "main" {
   }
 
   default_cache_behavior {
-    target_origin_id         = "alb"
+    target_origin_id         = "app"
     viewer_protocol_policy   = "redirect-to-https"
     allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
     cached_methods           = ["GET", "HEAD"]

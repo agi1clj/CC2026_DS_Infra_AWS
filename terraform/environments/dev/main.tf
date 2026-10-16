@@ -11,46 +11,36 @@ module "container_registry" {
   repository_names = module.naming.ecr_repository_names
 }
 
-module "load_balancer" {
-  source = "../../modules/load-balancer"
-
-  name       = local.name_base
-  vpc_id     = module.network.vpc_id
-  subnet_ids = module.network.public_subnet_ids
-  apps       = local.apps
-
-  allow_public_http = !var.enable_cdn
-}
-
 module "cdn" {
   source = "../../modules/cdn"
   count  = var.enable_cdn ? 1 : 0
 
   name               = local.name_base
-  origin_domain_name = module.load_balancer.dns_name
+  origin_domain_name = module.naming.eb_cname
 }
 
-module "ecs_services" {
-  source = "../../modules/ecs-services"
+module "beanstalk" {
+  source = "../../modules/beanstalk"
 
-  cluster_name      = module.naming.cluster_name
-  iam_role_prefix   = module.naming.iam_role_prefix
-  subnet_ids        = module.network.public_subnet_ids
-  security_group_id = module.load_balancer.tasks_security_group_id
-  public_url        = local.app_url
-  desired_count     = var.desired_count
+  application_name   = module.naming.eb_application_name
+  environment_name   = module.naming.eb_environment_name
+  cname_prefix       = module.naming.eb_cname_prefix
+  bundle_bucket_name = module.naming.bundle_bucket_name
+  iam_role_prefix    = module.naming.iam_role_prefix
+  vpc_id             = module.network.vpc_id
+  subnet_ids         = module.network.public_subnet_ids
+  instance_type      = var.instance_type
+  public_url         = local.app_url
 
-  apps = {
-    for app, cfg in local.apps : app => {
-      image_repository_url = module.container_registry.repository_urls[app]
-      port                 = cfg.port
-      target_group_arn     = module.load_balancer.target_group_arns[app]
-      cpu                  = var.task_cpu
-      memory               = var.task_memory
-      # Extension point: extra environment variables, e.g. environment = { DATA_BUCKET = ... }
-    }
+  # Extension point: extra environment variables, e.g. { DATA_BUCKET = module.storage.name }
+  environment_properties = {}
+}
+
+# Warns (does not fail) if Elastic Beanstalk assigned a different host name than the one
+# CloudFront and the containers were configured with.
+check "cname_matches_naming" {
+  assert {
+    condition     = module.beanstalk.cname == module.naming.eb_cname
+    error_message = "Elastic Beanstalk host name ${module.beanstalk.cname} differs from the expected ${module.naming.eb_cname}."
   }
-
-  # A service can only use a target group that is attached to a listener.
-  depends_on = [module.load_balancer]
 }

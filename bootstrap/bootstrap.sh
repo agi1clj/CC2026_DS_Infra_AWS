@@ -5,12 +5,12 @@
 # Creates (or reuses, when run again):
 #   1. Terraform remote state: an S3 bucket (versioned, encrypted, private)
 #   2. GitHub OIDC trust + two IAM roles (terraform/bootstrap, applied with YOUR login):
-#        github-actions-<project>-<initials>-apps   push images, deploy ECS services
+#        github-actions-<project>-<initials>-apps   push images, deploy to Elastic Beanstalk
 #        github-actions-<project>-<initials>-infra  run Terraform for environments/dev
 #   3. terraform/environments/dev/backend.hcl and terraform.tfvars
 #   4. The application infrastructure (terraform apply of environments/dev)
 #   5. GitHub repository variables in both repositories
-#   6. The first deployment: runs the Apps repository's backend-aws / frontend-aws workflows
+#   6. The first deployment: runs the Apps repository's deploy-aws workflow
 #
 # Usage (from the root of the Infra repository):
 #   aws login --profile <profile>            (personal/free account, see docs/aws-account-setup.md)
@@ -35,7 +35,7 @@ readonly TF_DIR="$REPO_ROOT/terraform/environments/dev"
 readonly BOOTSTRAP_TF_DIR="$REPO_ROOT/terraform/bootstrap"
 readonly SETTINGS_FILE="$REPO_ROOT/bootstrap/bootstrap.env"
 readonly SAVED_SETTINGS=(AWS_PROFILE AWS_REGION GITHUB_OWNER APPS_REPO INFRA_REPO STUDENT_INITIALS ENABLE_CDN CREATE_GITHUB_OIDC_PROVIDER)
-readonly APPS_WORKFLOWS=(backend-aws.yml frontend-aws.yml)
+readonly APPS_WORKFLOWS=(deploy-aws.yml)
 
 PREFLIGHT_PROBLEMS=0
 
@@ -221,16 +221,24 @@ check_vpc_quota() {
   fi
 }
 
-# Fargate needs 0.5 vCPU (two tasks of 0.25 vCPU), twice that during a deployment.
-check_fargate_quota() {
-  local quota
-  quota="$(aws service-quotas get-service-quota --service-code fargate --quota-code L-3032A538 --query 'Quota.Value' --output text 2>/dev/null || echo unknown)"
-  if [[ "$quota" == "unknown" ]]; then
-    warn "Could not read the Fargate vCPU quota (needs 1 vCPU during deployments)."
-  elif (($(printf '%.0f' "$quota") >= 1)); then
-    ok "Fargate on-demand vCPU quota: $quota (needs 1)"
+# The environment runs one t3.micro (2 vCPUs) with one Elastic IP.
+check_ec2_quotas() {
+  local vcpus eips used
+  vcpus="$(aws service-quotas get-service-quota --service-code ec2 --quota-code L-1216C47A --query 'Quota.Value' --output text 2>/dev/null || echo unknown)"
+  if [[ "$vcpus" == "unknown" ]]; then
+    warn "Could not read the EC2 vCPU quota (needs 2 for a t3.micro)."
+  elif (($(printf '%.0f' "$vcpus") >= 2)); then
+    ok "EC2 On-Demand standard vCPU quota: $vcpus (needs 2)"
   else
-    problem "Fargate vCPU quota is $quota; at least 1 is needed. Request an increase in Service Quotas (L-3032A538)."
+    problem "EC2 vCPU quota is $vcpus; at least 2 are needed. Request an increase in Service Quotas (L-1216C47A)."
+  fi
+
+  eips="$(aws service-quotas get-service-quota --service-code ec2 --quota-code L-0263D0A3 --query 'Quota.Value' --output text 2>/dev/null || echo 5)"
+  used="$(aws ec2 describe-addresses --query 'length(Addresses)' --output text)"
+  if (($(printf '%.0f' "$eips") > used)); then
+    ok "Elastic IP quota: $used of ${eips%.*} used, 1 more needed (or reused)"
+  else
+    problem "Elastic IP quota reached ($used of ${eips%.*}). Release an unused Elastic IP or request more."
   fi
 }
 
@@ -254,11 +262,11 @@ check_admin_rights() {
   local arn
   arn="$(aws sts get-caller-identity --query Arn --output text)"
   if aws iam simulate-principal-policy --policy-source-arn "$(role_arn_from_session "$arn")" \
-    --action-names iam:CreateRole iam:CreateOpenIDConnectProvider s3:CreateBucket ecs:CreateCluster \
+    --action-names iam:CreateRole iam:CreateOpenIDConnectProvider s3:CreateBucket elasticbeanstalk:CreateEnvironment \
     --query "EvaluationResults[?EvalDecision!='allowed'].EvalActionName" --output text 2>/dev/null | grep -q '[a-z]'; then
-    problem "Your AWS identity cannot create IAM roles, OIDC providers, buckets or ECS clusters. Use an administrator login (e.g. AdministratorAccess via SSO)."
+    problem "Your AWS identity cannot create IAM roles, OIDC providers, buckets or Elastic Beanstalk environments. Use an administrator login (see docs/aws-account-setup.md)."
   else
-    ok "Your AWS identity can create IAM roles, S3 buckets and ECS resources"
+    ok "Your AWS identity can create IAM roles, S3 buckets and Elastic Beanstalk environments"
   fi
 }
 
@@ -283,7 +291,7 @@ run_preflight() {
   check_region
   check_admin_rights
   check_vpc_quota
-  check_fargate_quota
+  check_ec2_quotas
   check_oidc_provider
 }
 
@@ -388,12 +396,15 @@ terraform_init_dev() {
     die "terraform init failed for environments/dev."
   ok "terraform init succeeded (state: s3://$STATE_BUCKET/dev.tfstate)"
   # Names come from Terraform itself (modules/naming), so they are defined in one place.
-  NAME_BASE="$(echo 'module.naming.name_base' | tf "$TF_DIR" console | tr -d '"')"
-  [[ -n "$NAME_BASE" ]] || die "Could not read resource names from Terraform."
+  local names
+  names="$(echo 'join(" ", [module.naming.name_base, module.naming.eb_application_name, module.naming.eb_environment_name, module.naming.bundle_bucket_name])' |
+    tf "$TF_DIR" console | tr -d '"')"
+  read -r NAME_BASE EB_APPLICATION EB_ENVIRONMENT EB_BUNDLE_BUCKET <<<"$names"
+  [[ -n "$EB_BUNDLE_BUCKET" ]] || die "Could not read resource names from Terraform."
 }
 
 apply_dev() {
-  info "Creating the application infrastructure (VPC, ALB, CloudFront, ECR, ECS); takes about 5 minutes"
+  info "Creating the application infrastructure (VPC, ECR, Elastic Beanstalk, CloudFront); takes about 5-8 minutes"
   local log
   log="$(mktemp)"
   if ! tf "$TF_DIR" apply -input=false -auto-approve 2>&1 | tee "$log"; then
@@ -419,12 +430,14 @@ configure_github_variables() {
   info "Setting GitHub repository variables (non-secret configuration)"
   set_github_variable "$APPS_REPO" AWS_REGION "$AWS_REGION"
   set_github_variable "$APPS_REPO" AWS_DEPLOY_ROLE_ARN "$APPS_ROLE_ARN"
-  set_github_variable "$APPS_REPO" ECS_CLUSTER "$NAME_BASE"
   set_github_variable "$APPS_REPO" ECR_REPOSITORY_PREFIX "$NAME_BASE"
+  set_github_variable "$APPS_REPO" EB_APPLICATION "$EB_APPLICATION"
+  set_github_variable "$APPS_REPO" EB_ENVIRONMENT "$EB_ENVIRONMENT"
+  set_github_variable "$APPS_REPO" EB_BUNDLE_BUCKET "$EB_BUNDLE_BUCKET"
   if [[ -n "${APP_URL:-}" ]]; then
     set_github_variable "$APPS_REPO" AWS_APP_URL "$APP_URL"
   fi
-  ok "$APPS_REPO: AWS_REGION, AWS_DEPLOY_ROLE_ARN, ECS_CLUSTER, ECR_REPOSITORY_PREFIX${APP_URL:+, AWS_APP_URL}"
+  ok "$APPS_REPO: AWS_REGION, AWS_DEPLOY_ROLE_ARN, ECR_REPOSITORY_PREFIX, EB_*${APP_URL:+, AWS_APP_URL}"
 
   set_github_variable "$INFRA_REPO" AWS_REGION "$AWS_REGION"
   set_github_variable "$INFRA_REPO" AWS_ACCOUNT_ID "$AWS_ACCOUNT_ID"
@@ -455,23 +468,23 @@ print_summary() {
 Infrastructure was not deployed (DEPLOY=false). Next steps:
   1. Infra repo -> GitHub Actions -> "terraform" -> Run workflow   (creates everything)
   2. Re-run ./bootstrap/bootstrap.sh                                 (stores the app URL)
-  3. Apps repo  -> run "backend-aws" and "frontend-aws"
+  3. Apps repo  -> run "deploy-aws"
 EOF
     return
   fi
   if [[ "$APPS_WORKFLOWS_PRESENT" == "true" && "${TRIGGER_APPS:-true}" == "true" ]]; then
     cat <<EOF
-The backend and frontend images are being built and deployed now (about 3-5 minutes):
-  gh run watch --repo $GITHUB_OWNER/$APPS_REPO \$(gh run list --repo $GITHUB_OWNER/$APPS_REPO --workflow backend-aws.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+The backend and frontend images are being built and deployed now (about 4-6 minutes):
+  gh run watch --repo $GITHUB_OWNER/$APPS_REPO \$(gh run list --repo $GITHUB_OWNER/$APPS_REPO --workflow deploy-aws.yml --limit 1 --json databaseId --jq '.[0].databaseId')
 EOF
   else
     cat <<EOF
-Deploy the apps: Apps repo -> GitHub Actions -> run "backend-aws" and "frontend-aws".
+Deploy the apps: Apps repo -> GitHub Actions -> run "deploy-aws".
 EOF
   fi
   cat <<EOF
 
-URLs (they answer once the Apps workflows have finished):
+URLs (until the Apps workflow has finished they show the Elastic Beanstalk sample page):
   Frontend: $APP_URL
   Backend:  $APP_URL/api/data      Health: $APP_URL/health
 

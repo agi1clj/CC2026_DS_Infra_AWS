@@ -14,12 +14,6 @@ variable "aws_region" {
   default     = "eu-central-1"
 }
 
-variable "desired_count" {
-  description = "Number of tasks per app (1 is enough for this project; 0 stops the apps without deleting anything)."
-  type        = number
-  default     = 1
-}
-
 variable "enable_cdn" {
   description = "Put CloudFront in front of the load balancer (HTTPS). Set to false if CloudFront is blocked for a new account; the app is then served over plain HTTP."
   type        = bool
@@ -35,6 +29,17 @@ variable "environment" {
   validation {
     condition     = contains(["dev"], var.environment)
     error_message = "Only the dev environment exists; add a new environments/<name> folder for others."
+  }
+}
+
+variable "instance_type" {
+  description = "EC2 instance type of the Elastic Beanstalk environment (t3.micro: 2 vCPU burst, 1 GiB; t3.small if containers run out of memory)."
+  type        = string
+  default     = "t3.micro"
+
+  validation {
+    condition     = can(regex("^(t3|t3a|m5|m6i|m7i|c6i|c7i)\\.", var.instance_type))
+    error_message = "Use an x86_64 instance type such as t3.micro or t3.small (images are built for linux/amd64)."
   }
 }
 
@@ -57,23 +62,6 @@ variable "student_initials" {
     condition     = can(regex("^[a-z]{2,5}$", var.student_initials))
     error_message = "Student initials must be 2-5 lowercase letters, e.g. agi."
   }
-}
-
-variable "task_cpu" {
-  description = "Fargate CPU units per task (256 = 0.25 vCPU, the smallest size)."
-  type        = number
-  default     = 256
-
-  validation {
-    condition     = contains([256, 512, 1024], var.task_cpu)
-    error_message = "task_cpu must be 256, 512 or 1024."
-  }
-}
-
-variable "task_memory" {
-  description = "Fargate memory per task in MiB (must be valid for task_cpu; 512 works with 256)."
-  type        = number
-  default     = 512
 }
 
 variable "vpc_cidr" {

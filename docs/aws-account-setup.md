@@ -36,7 +36,7 @@ Then continue with the [Quick start](../README.md#quick-start-about-10-minutes).
 
 | Fact | What to do |
 |---|---|
-| This project costs ≈ USD 1.80 per day while it runs (load balancer ≈ 0.65, two Fargate tasks ≈ 0.70, four public IPv4 addresses ≈ 0.48), so USD 100 lasts about 7 weeks of 24/7 running | Destroy it when you are not working on it (below). Re-creating it takes about 10 minutes |
+| This project costs ≈ USD 0.45 per day (≈ 13/month: one t3.micro, its Elastic IP and disk), so USD 100 covers more than the 6 months of the Free plan | Keep it running. To save credits during long breaks, destroy it (below); re-creating takes about 15 minutes |
 | On the Free plan you are never charged; when the credits run out, the account closes | Check the remaining credits in *Billing and Cost Management → Credits* |
 | The Free plan ends after **6 months** and the account closes (data is kept for 90 days) | Before month 6, either upgrade to the Paid plan (*Billing → Upgrade plan*; remaining credits carry over) or export what you need |
 
@@ -54,5 +54,5 @@ Pause and resume without losing your setup:
 | `Your account must be verified before you can add new CloudFront resources` | New accounts are sometimes held back. Open a free support case (*Support → Create case → Account and billing*) asking to enable CloudFront, or run without HTTPS for now: `ENABLE_CDN=false ./bootstrap/bootstrap.sh` (the app is then at `http://<load-balancer>`) |
 | `aws: error: argument command: Invalid choice: 'login'` | AWS CLI is older than 2.32; update it |
 | `AccessDenied` for `signin:...` during `aws login` | The IAM user lacks permissions. `AdministratorAccess` covers it; a restricted user needs the `SignInLocalDevelopmentAccess` managed policy |
-| Bootstrap: `Fargate vCPU quota is 0` / tasks stuck in PROVISIONING | New accounts sometimes start with low quotas. Request an increase for *Fargate On-Demand vCPU* (L-3032A538) in *Service Quotas* |
-| Service not available on the Free plan | This project uses only Free-plan services (VPC, ELB, ECS, ECR, CloudFront, CloudWatch, S3, IAM). Later parts (Glue, Lambda, Cognito) are also on the Free plan |
+| Bootstrap: `EC2 vCPU quota` too low / instance never starts | New accounts sometimes start with low quotas. Request an increase for *Running On-Demand Standard instances* (L-1216C47A) in *Service Quotas* |
+| Service not available on the Free plan | This project uses only Free-plan services (VPC, EC2, Elastic Beanstalk, ECR, CloudFront, CloudWatch, S3, IAM). Later parts (Glue, Lambda, Cognito) are also on the Free plan |
