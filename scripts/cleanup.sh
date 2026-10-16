@@ -118,7 +118,7 @@ delete_state_bucket() {
     batch="$(aws s3api list-object-versions --bucket "$STATE_BUCKET" --max-items 500 --output json |
       jq -c '{Objects: ([.Versions[]?, .DeleteMarkers[]?] | map({Key, VersionId})), Quiet: true}')"
     [[ "$(jq '.Objects | length' <<<"$batch")" != "0" ]] || break
-    aws s3api delete-objects --bucket "$STATE_BUCKET" --delete "$batch" --output none
+    aws s3api delete-objects --bucket "$STATE_BUCKET" --delete "$batch" >/dev/null
   done
   aws s3api delete-bucket --bucket "$STATE_BUCKET"
   rm -f "$TF_DIR/backend.hcl" "$BOOTSTRAP_TF_DIR/backend.hcl"

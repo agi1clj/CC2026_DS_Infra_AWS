@@ -193,7 +193,7 @@ check_apps_workflows() {
 }
 
 check_region() {
-  if aws ec2 describe-regions --region-names "$AWS_REGION" --output none 2>/dev/null; then
+  if aws ec2 describe-regions --region-names "$AWS_REGION" >/dev/null 2>&1; then
     ok "Region $AWS_REGION is enabled for this account"
   else
     problem "Region '$AWS_REGION' is unknown or not enabled for this account."
@@ -301,10 +301,10 @@ create_state_bucket() {
     ok "s3://$STATE_BUCKET exists (reused)"
   else
     if [[ "$AWS_REGION" == "us-east-1" ]]; then
-      aws s3api create-bucket --bucket "$STATE_BUCKET" --output none
+      aws s3api create-bucket --bucket "$STATE_BUCKET" >/dev/null
     else
       aws s3api create-bucket --bucket "$STATE_BUCKET" \
-        --create-bucket-configuration "LocationConstraint=$AWS_REGION" --output none
+        --create-bucket-configuration "LocationConstraint=$AWS_REGION" >/dev/null
     fi
     ok "Created s3://$STATE_BUCKET"
   fi
