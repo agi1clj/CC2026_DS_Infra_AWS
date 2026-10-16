@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "hashicorp": { "source": { "source": "github", "repo": "hashicorp/agent-skills" } },
+    "antonbabenko": { "source": { "source": "github", "repo": "antonbabenko/agent-plugins" } },
+    "agent-toolkit-for-aws": { "source": { "source": "github", "repo": "aws/agent-toolkit-for-aws" } }
+  },
+  "enabledPlugins": {
+    "terraform@hashicorp": true,
+    "terraform-skill@antonbabenko": true,
+    "aws-core@agent-toolkit-for-aws": true,
+    "aws-data-analytics@agent-toolkit-for-aws": true
+  }
+}

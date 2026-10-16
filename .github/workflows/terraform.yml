@@ -1,0 +1,119 @@
+# Terraform CI/CD for the dev environment.
+#   Pull requests / pushes: format check, init (no backend), validate, offline tests. No AWS access.
+#   Manual run (Actions -> terraform -> Run workflow): plan, save the plan, apply that exact plan.
+# terraform/bootstrap (the GitHub roles) is only tested here; it is applied locally by bootstrap.sh.
+name: terraform
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply the plan (unchecked = plan only)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: "1.16.5"
+  WORKING_DIR: terraform/environments/dev
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        root: [terraform/environments/dev, terraform/bootstrap]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive terraform
+
+      - name: terraform init (without remote state)
+        working-directory: ${{ matrix.root }}
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        working-directory: ${{ matrix.root }}
+        run: terraform validate
+
+      - name: terraform test (mocked provider, creates nothing)
+        working-directory: ${{ matrix.root }}
+        run: terraform test
+
+  deploy:
+    needs: validate
+    # Only a deliberate manual run on main may touch AWS.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required to request the GitHub OIDC token for AWS
+    concurrency:
+      group: terraform-dev
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    env:
+      # Terraform input variables: the same values bootstrap.sh wrote to terraform.tfvars.
+      TF_VAR_aws_account_id: ${{ vars.AWS_ACCOUNT_ID }}
+      TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+      TF_VAR_project_name: ${{ vars.PROJECT_NAME }}
+      TF_VAR_student_initials: ${{ vars.STUDENT_INITIALS }}
+      TF_IN_AUTOMATION: "true"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: AWS login (OIDC, no secrets)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_INFRA_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform init (remote state)
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TFSTATE_BUCKET }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
+
+      - name: terraform validate
+        run: terraform validate
+
+      - name: terraform plan
+        run: terraform plan -input=false -out=tfplan
+
+      - name: terraform apply (saved plan)
+        if: inputs.apply
+        run: terraform apply -input=false tfplan
+
+      - name: terraform output
+        if: inputs.apply
+        run: |
+          terraform output
+          {
+            echo "### Terraform outputs"
+            echo '```'
+            terraform output
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
