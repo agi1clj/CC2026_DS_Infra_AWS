@@ -309,7 +309,7 @@ print_preflight_summary() {
 
 create_state_bucket() {
   info "Terraform state bucket"
-  if aws s3api head-bucket --bucket "$STATE_BUCKET" 2>/dev/null; then
+  if aws s3api head-bucket --bucket "$STATE_BUCKET" >/dev/null 2>&1; then
     ok "s3://$STATE_BUCKET exists (reused)"
   else
     if [[ "$AWS_REGION" == "us-east-1" ]]; then
