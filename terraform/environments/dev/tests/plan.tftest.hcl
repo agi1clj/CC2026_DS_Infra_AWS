@@ -123,6 +123,29 @@ run "apps_are_wired_together" {
   }
 }
 
+run "without_cdn_serves_alb_over_http" {
+  command = apply # against the mocked provider only
+
+  variables {
+    enable_cdn = false
+  }
+
+  assert {
+    condition     = length(module.cdn) == 0
+    error_message = "CloudFront must not be created when enable_cdn is false."
+  }
+
+  assert {
+    condition     = output.app_url == "http://cc2026-agi-dev-123456789.eu-central-1.elb.amazonaws.com"
+    error_message = "Without CloudFront the app URL must be the load balancer: ${output.app_url}"
+  }
+
+  assert {
+    condition     = module.ecs_services.container_environment.frontend.API_BASE_URL == output.app_url
+    error_message = "The frontend must call the API through the load balancer URL."
+  }
+}
+
 run "rejects_bad_initials" {
   command = plan
 

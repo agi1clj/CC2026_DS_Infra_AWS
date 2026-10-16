@@ -50,11 +50,11 @@ variable "log_retention_days" {
 }
 
 variable "public_url" {
-  description = "Public HTTPS URL of the application (CloudFront). Used as the frontend's API base URL and the backend's CORS origin."
+  description = "Public URL of the application (CloudFront, or the load balancer without it). Used as the frontend's API base URL and the backend's CORS origin."
   type        = string
 
   validation {
-    condition     = can(regex("^https://[a-z0-9.-]+$", var.public_url))
+    condition     = can(regex("^https?://[a-zA-Z0-9.-]+$", var.public_url))
     error_message = "public_url must look like https://<host> without a trailing slash."
   }
 }

@@ -13,7 +13,8 @@
 #   6. The first deployment: runs the Apps repository's backend-aws / frontend-aws workflows
 #
 # Usage (from the root of the Infra repository):
-#   aws sso login --profile <profile>        (or any login that `aws sts get-caller-identity` accepts)
+#   aws login --profile <profile>            (personal/free account, see docs/aws-account-setup.md)
+#   aws sso login --profile <profile>        (organization with IAM Identity Center)
 #   gh auth login --scopes workflow
 #   AWS_PROFILE=<profile> ./bootstrap/bootstrap.sh --check   # read-only preflight, changes nothing
 #   AWS_PROFILE=<profile> ./bootstrap/bootstrap.sh           # same checks, then creates everything
@@ -23,7 +24,8 @@
 # environment variable, then re-run:  APPS_REPO=New_Name ./bootstrap/bootstrap.sh
 #
 # Options via environment: DEPLOY=false skips steps 4 and 6 (GitHub Actions can do them),
-# TRIGGER_APPS=false skips step 6.
+# TRIGGER_APPS=false skips step 6, ENABLE_CDN=false serves the app over HTTP without CloudFront
+# (use it if CloudFront says your new account must be verified first).
 # =============================================================================
 set -euo pipefail
 
@@ -32,7 +34,7 @@ readonly REPO_ROOT
 readonly TF_DIR="$REPO_ROOT/terraform/environments/dev"
 readonly BOOTSTRAP_TF_DIR="$REPO_ROOT/terraform/bootstrap"
 readonly SETTINGS_FILE="$REPO_ROOT/bootstrap/bootstrap.env"
-readonly SAVED_SETTINGS=(AWS_PROFILE AWS_REGION GITHUB_OWNER APPS_REPO INFRA_REPO STUDENT_INITIALS CREATE_GITHUB_OIDC_PROVIDER)
+readonly SAVED_SETTINGS=(AWS_PROFILE AWS_REGION GITHUB_OWNER APPS_REPO INFRA_REPO STUDENT_INITIALS ENABLE_CDN CREATE_GITHUB_OIDC_PROVIDER)
 readonly APPS_WORKFLOWS=(backend-aws.yml frontend-aws.yml)
 
 PREFLIGHT_PROBLEMS=0
@@ -117,7 +119,7 @@ check_logins() {
   fi
   local identity
   identity="$(aws sts get-caller-identity --output json 2>/dev/null)" ||
-    die "Not logged in to AWS${AWS_PROFILE:+ (profile $AWS_PROFILE)}. Run: aws sso login${AWS_PROFILE:+ --profile $AWS_PROFILE}"
+    die "Not logged in to AWS${AWS_PROFILE:+ (profile $AWS_PROFILE)}. Run: aws login${AWS_PROFILE:+ --profile $AWS_PROFILE} (or aws sso login for Identity Center). Setup: docs/aws-account-setup.md"
   AWS_ACCOUNT_ID="$(jq -r .Account <<<"$identity")"
   ok "AWS account $AWS_ACCOUNT_ID as $(jq -r .Arn <<<"$identity")"
   # `gh auth status` fails if ANY stored account is invalid, so test the active github.com login directly.
@@ -140,6 +142,8 @@ collect_inputs() {
   export AWS_REGION
 
   PROJECT_NAME="${PROJECT_NAME:-cc2026}"
+  ENABLE_CDN="${ENABLE_CDN:-true}"
+  [[ "$ENABLE_CDN" =~ ^(true|false)$ ]] || die "ENABLE_CDN must be true or false (got '$ENABLE_CDN')."
   [[ "$STUDENT_INITIALS" =~ ^[a-z]{2,5}$ ]] || die "Initials must be 2-5 lowercase letters (got '$STUDENT_INITIALS')."
 
   STATE_BUCKET="$PROJECT_NAME-$STUDENT_INITIALS-tfstate-$AWS_ACCOUNT_ID"
@@ -360,6 +364,7 @@ student_initials = "$STUDENT_INITIALS"
 environment      = "dev"
 aws_region       = "$AWS_REGION"
 aws_account_id   = "$AWS_ACCOUNT_ID"
+enable_cdn       = $ENABLE_CDN
 EOF
   ok "terraform/bootstrap/{backend.hcl,terraform.tfvars}"
   ok "terraform/environments/dev/{backend.hcl,terraform.tfvars}"
@@ -389,8 +394,17 @@ terraform_init_dev() {
 
 apply_dev() {
   info "Creating the application infrastructure (VPC, ALB, CloudFront, ECR, ECS); takes about 5 minutes"
-  tf "$TF_DIR" apply -input=false -auto-approve ||
+  local log
+  log="$(mktemp)"
+  if ! tf "$TF_DIR" apply -input=false -auto-approve 2>&1 | tee "$log"; then
+    if grep -q "must be verified" "$log"; then
+      rm -f "$log"
+      die "CloudFront is not yet enabled for this new account. Either open a (free) AWS Support case 'Account and billing' asking to enable CloudFront, or continue without HTTPS: ENABLE_CDN=false ./bootstrap/bootstrap.sh"
+    fi
+    rm -f "$log"
     die "terraform apply failed. Fix the error above and re-run this script (it continues where it stopped)."
+  fi
+  rm -f "$log"
   APP_URL="$(tf "$TF_DIR" output -raw app_url)"
   ok "Infrastructure ready: $APP_URL"
 }
@@ -418,7 +432,8 @@ configure_github_variables() {
   set_github_variable "$INFRA_REPO" TFSTATE_BUCKET "$STATE_BUCKET"
   set_github_variable "$INFRA_REPO" PROJECT_NAME "$PROJECT_NAME"
   set_github_variable "$INFRA_REPO" STUDENT_INITIALS "$STUDENT_INITIALS"
-  ok "$INFRA_REPO: AWS_REGION, AWS_ACCOUNT_ID, AWS_INFRA_ROLE_ARN, TFSTATE_BUCKET, PROJECT_NAME, STUDENT_INITIALS"
+  set_github_variable "$INFRA_REPO" ENABLE_CDN "$ENABLE_CDN"
+  ok "$INFRA_REPO: AWS_REGION, AWS_ACCOUNT_ID, AWS_INFRA_ROLE_ARN, TFSTATE_BUCKET, PROJECT_NAME, STUDENT_INITIALS, ENABLE_CDN"
 }
 
 trigger_apps_workflows() {

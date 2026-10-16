@@ -20,6 +20,13 @@ variable "desired_count" {
   default     = 1
 }
 
+variable "enable_cdn" {
+  description = "Put CloudFront in front of the load balancer (HTTPS). Set to false if CloudFront is blocked for a new account; the app is then served over plain HTTP."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
 variable "environment" {
   description = "Environment name used in resource names and tags."
   type        = string

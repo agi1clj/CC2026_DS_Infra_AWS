@@ -3,24 +3,38 @@
 #   everything else     -> frontend (port 8080)
 # Frontend and API share one origin, so the browser needs no cross-origin calls.
 #
-# The ALB listens on HTTP only and accepts traffic only from CloudFront (AWS-managed
-# prefix list). CloudFront terminates HTTPS with its default *.cloudfront.net certificate.
+# The ALB listens on HTTP only. With CloudFront (default) it accepts traffic only from
+# CloudFront's AWS-managed prefix list; CloudFront terminates HTTPS. Without CloudFront
+# (allow_public_http = true) it is reachable directly over plain HTTP.
 data "aws_ec2_managed_prefix_list" "cloudfront" {
   name = "com.amazonaws.global.cloudfront.origin-facing"
 }
 
 resource "aws_security_group" "alb" {
   name        = "${var.name}-alb"
-  description = "Load balancer: HTTP from CloudFront only"
+  description = "Load balancer: HTTP from CloudFront (or the internet without CloudFront)"
   vpc_id      = var.vpc_id
 
   tags = { Name = "${var.name}-alb" }
 }
 
 resource "aws_vpc_security_group_ingress_rule" "alb_from_cloudfront" {
+  count = var.allow_public_http ? 0 : 1
+
   security_group_id = aws_security_group.alb.id
   description       = "HTTP from CloudFront edge locations"
   prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
+}
+
+resource "aws_vpc_security_group_ingress_rule" "alb_from_internet" {
+  count = var.allow_public_http ? 1 : 0
+
+  security_group_id = aws_security_group.alb.id
+  description       = "HTTP from the internet (no CloudFront)"
+  cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "tcp"
   from_port         = 80
   to_port           = 80

@@ -11,6 +11,9 @@ module "naming" {
 locals {
   name_base = module.naming.name_base
 
+  # HTTPS through CloudFront, or plain HTTP to the load balancer when CloudFront is disabled.
+  app_url = var.enable_cdn ? one(module.cdn[*].url) : "http://${module.load_balancer.dns_name}"
+
   # Container ports and health endpoints, fixed by the images in the Apps repository.
   apps = {
     backend  = { port = 8000, health_check_path = "/health", short_name = "be" }

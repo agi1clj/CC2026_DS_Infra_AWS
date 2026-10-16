@@ -1,16 +1,16 @@
 output "app_url" {
-  description = "Public HTTPS URL of the application (frontend; the API is under /api)."
-  value       = module.cdn.url
+  description = "Public URL of the application (frontend; the API is under /api)."
+  value       = local.app_url
 }
 
 output "backend_url" {
   description = "Example backend endpoint."
-  value       = "${module.cdn.url}/api/data"
+  value       = "${local.app_url}/api/data"
 }
 
 output "cloudfront_distribution_id" {
-  description = "ID of the CloudFront distribution."
-  value       = module.cdn.distribution_id
+  description = "ID of the CloudFront distribution (null when enable_cdn = false)."
+  value       = one(module.cdn[*].distribution_id)
 }
 
 output "ecr_registry" {

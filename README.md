@@ -6,13 +6,14 @@ Terraform, bootstrap and CI/CD for the *Cloud Computing* project (UTCN, 2026–2
 
 ## Quick start (about 10 minutes)
 
-Tools: `aws` (v2), `gh`, `terraform` ≥ 1.14, `git`, `jq`.
+Tools: `aws` ≥ 2.32, `gh`, `terraform` ≥ 1.14, `git`, `jq`. New to AWS / free account: first follow **[docs/aws-account-setup.md](docs/aws-account-setup.md)** (account, IAM user, `aws login`, credits).
 
 ```bash
-aws sso login --profile <your-profile>          # or any login that works with `aws sts get-caller-identity`
+aws login --profile cc2026 --region eu-central-1   # free/personal account (IAM user)
+#   or: aws sso login --profile <profile>           # organization with IAM Identity Center
 gh auth login --scopes workflow
 
-export AWS_PROFILE=<your-profile>
+export AWS_PROFILE=cc2026
 ./bootstrap/bootstrap.sh --check                # read-only: tells you what will work
 ./bootstrap/bootstrap.sh                        # creates everything and starts the first deployment
 ```
@@ -48,7 +49,7 @@ flowchart LR
 | User-assigned identity (AcrPull) | Task execution role (ECR pull, logs) + task role (for P2 data access) |
 | Two-stage create (`CREATE_WEB_APPS`) | Not needed: ECS services may exist before the first image |
 
-**Cost** (eu-central-1, running 24/7): ALB ≈ $18/month, two Fargate tasks ≈ $18/month, ECR/CloudWatch/CloudFront/S3 cents. Stop the apps without deleting anything: set `desired_count = 0`. Remove everything: `./scripts/cleanup.sh`.
+**Cost** (eu-central-1, 24/7): ≈ USD 1.80/day (ALB, two 0.25-vCPU Fargate tasks, four public IPv4 addresses; ECR/CloudWatch/CloudFront/S3 are cents). Pause by destroying (step 1 of `./scripts/cleanup.sh`) and resume with `./bootstrap/bootstrap.sh`; see [credits and the 6-month Free-plan limit](docs/aws-account-setup.md#3-credits-and-the-6-month-limit).
 
 ## Terraform layout
 
@@ -89,7 +90,8 @@ Azure and AWS can coexist in the Apps repo; each cloud deploys only if its varia
 
 | Symptom | Fix |
 |---|---|
-| `Not logged in to AWS` | `aws sso login --profile <profile>`; SSO sessions expire after a few hours |
+| `Not logged in to AWS` / `session has expired` | `aws login --profile cc2026` (or `aws sso login`); sessions last up to 12 h |
+| `account must be verified` (CloudFront) | New account: `ENABLE_CDN=false ./bootstrap/bootstrap.sh`, or ask AWS Support to enable CloudFront ([details](docs/aws-account-setup.md#4-free-account-issues)) |
 | Site returns 502/503 right after bootstrap | The first images are still being built; watch the Apps workflows |
 | `deploy-ecs.sh`: rolled back | The new container did not pass its health check; `aws logs tail /ecs/cc2026-<initials>-dev/<app> --follow` |
 | Terraform: `account ... not allowed` | You are logged in to a different account than the one in `terraform.tfvars` |

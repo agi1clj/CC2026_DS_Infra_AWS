@@ -76,6 +76,7 @@ jobs:
       TF_VAR_aws_region: ${{ vars.AWS_REGION }}
       TF_VAR_project_name: ${{ vars.PROJECT_NAME }}
       TF_VAR_student_initials: ${{ vars.STUDENT_INITIALS }}
+      TF_VAR_enable_cdn: ${{ vars.ENABLE_CDN || 'true' }}
       TF_IN_AUTOMATION: "true"
     steps:
       - uses: actions/checkout@v7

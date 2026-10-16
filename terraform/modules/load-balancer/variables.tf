@@ -1,3 +1,9 @@
+variable "allow_public_http" {
+  description = "Accept HTTP from anywhere instead of only from CloudFront (use when CloudFront is disabled)."
+  type        = bool
+  default     = false
+}
+
 variable "apps" {
   description = "Apps behind the load balancer. Keys must include backend and frontend."
   type = map(object({

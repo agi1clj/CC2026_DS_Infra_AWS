@@ -18,10 +18,13 @@ module "load_balancer" {
   vpc_id     = module.network.vpc_id
   subnet_ids = module.network.public_subnet_ids
   apps       = local.apps
+
+  allow_public_http = !var.enable_cdn
 }
 
 module "cdn" {
   source = "../../modules/cdn"
+  count  = var.enable_cdn ? 1 : 0
 
   name               = local.name_base
   origin_domain_name = module.load_balancer.dns_name
@@ -34,7 +37,7 @@ module "ecs_services" {
   iam_role_prefix   = module.naming.iam_role_prefix
   subnet_ids        = module.network.public_subnet_ids
   security_group_id = module.load_balancer.tasks_security_group_id
-  public_url        = module.cdn.url
+  public_url        = local.app_url
   desired_count     = var.desired_count
 
   apps = {
