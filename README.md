@@ -17,11 +17,9 @@ export AWS_PROFILE=<your-profile>
 ./bootstrap/bootstrap.sh                        # creates everything and starts the first deployment
 ```
 
-The script asks for your initials, region (default `eu-central-1`) and repository names (defaults come from the git remote), saves the answers in `bootstrap/bootstrap.env`, and is safe to re-run. At the end it prints the URL. The first image build and deploy take another 3–5 minutes in GitHub Actions.
+It asks for initials, region and repo names (saved to `bootstrap/bootstrap.env`; safe to re-run) and prints the URL. The first image build takes another 3–5 min in GitHub Actions.
 
-After that:
-- **Apps**: every push to `main` builds, pushes and deploys (`backend-aws`, `frontend-aws` workflows).
-- **Infra**: change Terraform, push, then *Actions → terraform → Run workflow* (or `terraform apply` locally).
+Afterwards: push to Apps `main` deploys; Infra changes go through *Actions → terraform → Run workflow* (or local `terraform apply`).
 
 ## Architecture
 
@@ -50,8 +48,6 @@ flowchart LR
 | User-assigned identity (AcrPull) | Task execution role (ECR pull, logs) + task role (for P2 data access) |
 | Two-stage create (`CREATE_WEB_APPS`) | Not needed: ECS services may exist before the first image |
 
-Frontend and API share one origin (`/api/*` is routed to the backend), so the browser makes no cross-origin calls; `CORS_ORIGINS` is still set to the CloudFront URL.
-
 **Cost** (eu-central-1, running 24/7): ALB ≈ $18/month, two Fargate tasks ≈ $18/month, ECR/CloudWatch/CloudFront/S3 cents. Stop the apps without deleting anything: set `desired_count = 0`. Remove everything: `./scripts/cleanup.sh`.
 
 ## Terraform layout
@@ -72,7 +68,7 @@ terraform/
 
 ## How deployments work
 
-Terraform creates each task definition with the `:latest` image and ignores later revisions (`ignore_changes = [task_definition]`). The Apps workflows push `<sha>` and `latest`, then `scripts/deploy-ecs.sh` copies the **newest** revision of the family, swaps in the `<sha>` image, registers it and updates the service. Settings changed by Terraform (environment variables, CPU, memory) therefore reach the containers on the next app deployment; re-run the Apps workflows after such a change. A deployment whose tasks never become healthy is rolled back automatically (ECS circuit breaker) and the workflow fails.
+Terraform creates task definitions with `:latest` and ignores later revisions. The Apps workflows push `<sha>` + `latest`; `scripts/deploy-ecs.sh` copies the newest revision, swaps in `<sha>` and updates the service. Terraform changes to env/CPU/memory reach containers on the next app deploy. Unhealthy deployments roll back (ECS circuit breaker).
 
 ## GitHub variables (set by bootstrap.sh, no secrets)
 
@@ -81,13 +77,13 @@ Terraform creates each task definition with the `:latest` image and ignores late
 | Apps | `AWS_REGION`, `AWS_DEPLOY_ROLE_ARN`, `ECS_CLUSTER`, `ECR_REPOSITORY_PREFIX`, `AWS_APP_URL` |
 | Infra | `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_INFRA_ROLE_ARN`, `TFSTATE_BUCKET`, `PROJECT_NAME`, `STUDENT_INITIALS` |
 
-The Apps repository can be configured for Azure and AWS at the same time; each cloud's workflows run only when their variables exist (`AZURE_CLIENT_ID` / `AWS_DEPLOY_ROLE_ARN`).
+Azure and AWS can coexist in the Apps repo; each cloud deploys only if its variable exists (`AZURE_CLIENT_ID` / `AWS_DEPLOY_ROLE_ARN`).
 
 ## Permissions
 
-- **Apps role**: push to the two ECR repositories, register task definitions, update the two ECS services, pass the two task roles to ECS. Nothing else.
-- **Infra role**: `PowerUserAccess` (every non-IAM service) plus IAM limited to roles/policies named `cc2026-<initials>-dev-*`. It cannot change its own role or the Apps role. Use a dedicated sandbox account: anyone who can push to `main` of the Infra repository can run Terraform with this role.
-- Both roles trust only the `main` branch of their own repository.
+- **Apps role**: push to the two ECR repos, register task definitions, update the two services. Nothing else.
+- **Infra role**: `PowerUserAccess` + IAM limited to `cc2026-<initials>-dev-*`. Broad: use a sandbox account.
+- Both trust only `main` of their own repo.
 
 ## Common errors
 
