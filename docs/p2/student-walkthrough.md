@@ -31,12 +31,12 @@ Every run writes gold files twice: to `gold/by-timestamp/<yyyyMMddTHHmmssZ>/` (h
 
 ## 1. Get the P2 code
 
-The instructor opens a pull request (PR) in the template repo and gives you its number. In your Infra repo, on `main`:
+The P2 code is a pull request (PR) in the template repo. In your Infra repo, on `main`:
 
 ```bash
 cd CC2026_<LastName>_<FirstName>_Infra_AWS
 git checkout main
-gh pr diff <PR-number> --repo agi1clj/CC2026_DS_Infra_AWS | git apply
+gh pr diff 1 --repo agi1clj/CC2026_DS_Infra_AWS | git apply
 git add -A && git commit -m "feat(p2): add the data pipeline" && git push
 ```
 
@@ -171,11 +171,11 @@ Open `terraform/modules/data-pipeline/glue/energy_etl.py`. Read it in this order
 - The webhook URL is in an SSM SecureString and also in the Terraform state. We accept this limit.
 
 ## Next: Apps challenge
-Get the Apps code. The instructor gives you the PR number. In your Apps repo, on `main`:
+Get the Apps code (also a PR). In your Apps repo, on `main`:
 
 ```bash
 git checkout main
-gh pr diff <PR-number> --repo agi1clj/CC2026_DS_Applications | git apply
+gh pr diff 1 --repo agi1clj/CC2026_DS_Applications | git apply
 git add -A && git commit -m "feat(p2): add the challenge brief and sample data"
 ```
 
