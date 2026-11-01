@@ -27,12 +27,12 @@ module "data_pipeline" {
   teams_webhook_url = var.teams_webhook_url
 }
 
-# The backend reads the gold JSON files only (never bronze or silver).
+# The backend reads only gold/latest/ (never bronze, silver or the gold history).
 data "aws_iam_policy_document" "backend_reads_gold" {
   statement {
     sid       = "ReadGold"
     actions   = ["s3:GetObject"]
-    resources = ["${module.storage.arn}/gold/*"]
+    resources = ["${module.storage.arn}/gold/latest/*"]
   }
 
   statement {
@@ -42,7 +42,7 @@ data "aws_iam_policy_document" "backend_reads_gold" {
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = ["gold/*"]
+      values   = ["gold/latest/*"]
     }
   }
 }
@@ -77,7 +77,7 @@ module "beanstalk" {
   # Extension point: extra environment variables for the containers.
   environment_properties = {
     DATA_BUCKET = module.storage.name
-    GOLD_PREFIX = "gold/"
+    GOLD_PREFIX = "gold/latest/"
   }
 }
 

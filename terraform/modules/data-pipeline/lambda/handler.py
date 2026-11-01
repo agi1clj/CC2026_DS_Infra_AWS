@@ -3,6 +3,7 @@
 One function handles two EventBridge events:
   - S3 "Object Created" under bronze/raw/*.csv  -> start the Glue job with the object key.
   - Glue "Glue Job State Change" (final states) -> post an Adaptive Card to Microsoft Teams.
+If a run is already active, the Lambda posts a SKIPPED card (no error).
 Teams problems are logged and never raise. Without a webhook parameter Teams is skipped.
 """
 import json
@@ -33,7 +34,20 @@ def handler(event, context):
 def start_job(detail):
     bucket = detail["bucket"]["name"]
     key = detail["object"]["key"]
-    run = glue.start_job_run(JobName=GLUE_JOB_NAME, Arguments={"--bucket": bucket, "--key": key})
+    try:
+        run = glue.start_job_run(JobName=GLUE_JOB_NAME, Arguments={"--bucket": bucket, "--key": key})
+    except glue.exceptions.ConcurrentRunsExceededException:
+        print(f"SKIPPED s3://{bucket}/{key}: another run is active")
+        post_to_teams(
+            build_card(
+                status="SKIPPED",
+                file_name=key,
+                run_id="-",
+                message="Another run is active. Upload the file again when it finishes.",
+                link=console_link(GLUE_JOB_NAME),
+            )
+        )
+        return None
     print(f"Started {GLUE_JOB_NAME} run {run['JobRunId']} for s3://{bucket}/{key}")
     return run["JobRunId"]
 
@@ -53,7 +67,7 @@ def notify(detail):
 
     succeeded = state == "SUCCEEDED"
     if succeeded and not message:
-        message = "Silver (Parquet) and gold (JSON) files were updated."
+        message = "Silver (Parquet) and gold (JSON, gold/latest/) were updated."
     if not succeeded:
         message = f"Glue state {state}. {message}".strip()
 
@@ -62,14 +76,18 @@ def notify(detail):
         file_name=file_name,
         run_id=run_id,
         message=message,
-        link=f"https://{REGION}.console.aws.amazon.com/gluestudio/home?region={REGION}#/job/{job_name}/runs",
+        link=console_link(job_name),
     )
     post_to_teams(card)
     return state
 
 
+def console_link(job_name):
+    return f"https://{REGION}.console.aws.amazon.com/gluestudio/home?region={REGION}#/job/{job_name}/runs"
+
+
 def build_card(status, file_name, run_id, message, link):
-    color = "Good" if status == "SUCCEEDED" else "Attention"
+    color = {"SUCCEEDED": "Good", "SKIPPED": "Warning"}.get(status, "Attention")
     facts = [
         ("File", file_name or "(unknown)"),
         ("Run id", run_id),

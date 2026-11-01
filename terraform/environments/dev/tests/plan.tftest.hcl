@@ -177,7 +177,7 @@ run "pipeline_names_and_wiring" {
   }
 
   assert {
-    condition     = module.beanstalk.environment_properties.DATA_BUCKET == module.storage.name && module.beanstalk.environment_properties.GOLD_PREFIX == "gold/"
+    condition     = module.beanstalk.environment_properties.DATA_BUCKET == module.storage.name && module.beanstalk.environment_properties.GOLD_PREFIX == "gold/latest/"
     error_message = "The containers need DATA_BUCKET and GOLD_PREFIX."
   }
 }

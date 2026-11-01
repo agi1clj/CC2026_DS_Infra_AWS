@@ -8,6 +8,7 @@ import argparse
 import io
 import json
 import operator
+from datetime import datetime, timezone
 from functools import reduce
 
 import boto3
@@ -16,6 +17,8 @@ import pandas as pd
 REQUIRED_COLUMNS = ["device_id", "timestamp", "temperature", "humidity", "kwh", "location"]
 SILVER_PREFIX = "silver/energy_readings/"
 GOLD_PREFIX = "gold/"
+# Every run writes gold/by-timestamp/<run time>/<file> (history, never deleted) and then
+# overwrites gold/latest/<file>. The backend reads gold/latest/ only.
 
 
 # ----------------------------------------------------------------------------- silver
@@ -57,7 +60,7 @@ def write_silver(s3, bucket, df):
 
 # ----------------------------------------------------------------------------- gold
 # Each gold function takes the clean silver DataFrame and returns a list of records
-# (list of dicts). main() writes the list as gold/<file name>.json.
+# (list of dicts). write_gold() writes each list as <file name> under gold/by-timestamp/ and gold/latest/.
 # Rounding: use py_round (Python's round is exact at ties; numpy's is not).
 
 def py_round(series, digits):
@@ -122,6 +125,21 @@ def to_json(records):
     return json.dumps(records, indent=1)
 
 
+def write_gold(s3, bucket, run_time, tables):
+    """tables = {file name: records}. History first, latest last: latest only changes
+    after the whole run worked."""
+    stamp = run_time.strftime("%Y%m%dT%H%M%SZ")
+    for folder in (f"{GOLD_PREFIX}by-timestamp/{stamp}/", f"{GOLD_PREFIX}latest/"):
+        for name, records in tables.items():
+            s3.put_object(
+                Bucket=bucket,
+                Key=folder + name,
+                Body=to_json(records).encode("utf-8"),
+                ContentType="application/json",
+            )
+        print(f"Gold written to s3://{bucket}/{folder}")
+
+
 def delete_prefix(s3, bucket, prefix):
     paginator = s3.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
@@ -136,6 +154,7 @@ def main():
     parser.add_argument("--key", required=True)
     args, _ = parser.parse_known_args()  # Glue adds its own arguments
 
+    run_time = datetime.now(timezone.utc)  # job start time, used in the gold history folder
     s3 = boto3.client("s3")
     print(f"Reading s3://{args.bucket}/{args.key}")
     body = s3.get_object(Bucket=args.bucket, Key=args.key)["Body"].read()
@@ -146,15 +165,10 @@ def main():
     print(f"Silver rows: {len(silver)} (removed {len(raw) - len(silver)})")
     write_silver(s3, args.bucket, silver)
 
-    for name, build in GOLD_OUTPUTS.items():
-        records = build(silver)
-        s3.put_object(
-            Bucket=args.bucket,
-            Key=GOLD_PREFIX + name,
-            Body=to_json(records).encode("utf-8"),
-            ContentType="application/json",
-        )
+    tables = {name: build(silver) for name, build in GOLD_OUTPUTS.items()}
+    for name, records in tables.items():
         print(f"Gold {name}: {len(records)} records")
+    write_gold(s3, args.bucket, run_time, tables)
 
 
 if __name__ == "__main__":
