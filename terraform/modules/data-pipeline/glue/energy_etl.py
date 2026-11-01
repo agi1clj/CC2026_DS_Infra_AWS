@@ -7,8 +7,8 @@ Arguments:
   --key               bronze object key, e.g. bronze/raw/energy_readings.csv
   --max-reject-ratio  fail when more than this share of rows is rejected (default 0.10 = 10 %)
 
-The job raises an error (Glue reports FAILED) when a column is missing or when too many rows
-are rejected. Both checks run before anything is written.
+The job raises an error (Glue reports FAILED) when a column is missing, when too many rows are
+rejected, or when no valid row is left. These checks run before anything is written.
 """
 import argparse
 import io
@@ -86,13 +86,19 @@ def reject_reasons(df):
 def check_reject_ratio(rows_in, rows_rejected, max_ratio):
     """Stop the run before anything is written when too many rows were rejected."""
     if rows_in == 0:
-        raise ValueError("The file has no data rows.")
+        return  # nothing to compare; check_valid_rows reports it
     ratio = rows_rejected / rows_in
     if ratio > max_ratio:
         raise ValueError(
             f"Too many rejected rows: {rows_rejected} of {rows_in} ({ratio:.1%}), "
             f"limit {max_ratio:.1%}. Nothing was written."
         )
+
+
+def check_valid_rows(silver):
+    """Stop the run before anything is written when no valid row is left."""
+    if silver.empty:
+        raise ValueError("No valid rows: nothing to publish. Silver and gold were not changed.")
 
 
 def write_silver(s3, bucket, silver, rejected, summary):
@@ -202,10 +208,14 @@ def main():
     s3 = boto3.client("s3")
     print(f"Reading s3://{args.bucket}/{args.key}")
     body = s3.get_object(Bucket=args.bucket, Key=args.key)["Body"].read()
-    raw = pd.read_csv(io.BytesIO(body), dtype=str, keep_default_na=False, na_values=[""])
+    try:
+        raw = pd.read_csv(io.BytesIO(body), dtype=str, keep_default_na=False, na_values=[""])
+    except pd.errors.EmptyDataError as error:
+        raise ValueError("No valid rows: nothing to publish. The CSV is empty.") from error
 
     silver, rejected, duplicates = clean(raw)
     check_reject_ratio(len(raw), len(rejected), args.max_reject_ratio)  # before any write
+    check_valid_rows(silver)
     summary = {
         "rows_in": len(raw),
         "rows_silver": len(silver),

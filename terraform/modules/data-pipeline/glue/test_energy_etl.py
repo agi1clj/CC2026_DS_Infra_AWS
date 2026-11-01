@@ -1,6 +1,4 @@
 """Unit tests for energy_etl.py (run: pytest terraform/modules/data-pipeline/glue)."""
-from pathlib import Path
-
 import pandas as pd
 import pytest
 
@@ -79,8 +77,7 @@ def test_reject_ratio_check():
     etl.check_reject_ratio(100, 10, 0.10)  # exactly at the limit is fine
     with pytest.raises(ValueError, match="Too many rejected rows"):
         etl.check_reject_ratio(100, 11, 0.10)
-    with pytest.raises(ValueError, match="no data rows"):
-        etl.check_reject_ratio(0, 0, 0.10)
+    etl.check_reject_ratio(0, 0, 0.10)  # an empty file is reported by check_valid_rows
 
 
 def test_gold_daily_by_device_shape():
@@ -97,12 +94,20 @@ def test_gold_daily_by_device_shape():
     }
 
 
-def test_too_dirty_sample_file_trips_the_reject_ratio():
-    path = Path(__file__).resolve().parents[4] / "data" / "energy_too_dirty.csv"
-    raw = pd.read_csv(path, dtype=str, keep_default_na=False, na_values=[""])
+def test_half_empty_kwh_trips_the_reject_ratio():
+    rows = [{"timestamp": f"2025-11-01T00:{minute:02d}:00Z", "kwh": "" if minute % 2 else "0.05"} for minute in range(10)]
+    raw = frame(*rows)
     _, rejected, _ = etl.clean(raw)
     with pytest.raises(ValueError, match="Too many rejected rows"):
         etl.check_reject_ratio(len(raw), len(rejected), 0.10)
+
+
+@pytest.mark.parametrize("rows", [[], [{"kwh": ""}, {"timestamp": "2025-11-01T00:05:00Z", "humidity": "150"}]])
+def test_no_valid_rows_raises(rows):
+    raw = frame(*rows) if rows else pd.DataFrame(columns=etl.REQUIRED_COLUMNS, dtype=str)
+    silver, _, _ = etl.clean(raw)
+    with pytest.raises(ValueError, match="No valid rows: nothing to publish"):
+        etl.check_valid_rows(silver)
 
 
 def test_gold_by_location_shape():
