@@ -7,7 +7,7 @@ Teaching project (UTCN Cloud Computing). AWS infra for the companion Apps reposi
 - `terraform/bootstrap/` GitHub OIDC trust + the two GitHub roles (state key `bootstrap.tfstate`). Applied **only locally** by `bootstrap.sh`; CI never changes the roles it runs as.
 - `terraform/modules/naming/` every resource name, shared by both roots. Other modules: one small module per service (`main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`).
 - `terraform/modules/storage/` and `terraform/modules/data-pipeline/` P2: one S3 bucket (prefixes `bronze/`, `silver/`, `gold/`); the Glue script (`glue/energy_etl.py`) and the Lambda (`lambda/handler.py`) live in the module.
-- `scripts/generate_dataset.py` and `data/` (small sample files only) for P2.
+- `data/` P2 small sample files only (the 32 MB `energy_readings.csv` comes from the course channel and stays git-ignored).
 - `bootstrap/bootstrap.sh` one command: state bucket, roles, apply, GitHub variables, first deploy. `scripts/cleanup.sh` deliberate teardown.
 - How to add services: `docs/extending.md`.
 

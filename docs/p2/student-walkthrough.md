@@ -66,13 +66,16 @@ terraform -chdir=terraform/environments/dev init -backend-config=backend.hcl   #
 BUCKET=$(terraform -chdir=terraform/environments/dev output -raw data_bucket_name)
 ```
 
-## 3. Generate the data and upload it
+## 3. Get the data and upload it
+
+Download `energy_readings.csv` from the course channel (Teams, Files) and save it as `data/energy_readings.csv`. It has 532,895 rows and 32 MB. Git ignores this file. Check it:
 
 ```bash
-python3 scripts/generate_dataset.py --out data --expected-gold data/expected-gold
+wc -l data/energy_readings.csv    # 532896 (the header counts)
+head -3 data/energy_readings.csv  # device_id,timestamp,temperature,humidity,kwh,location
 ```
 
-It writes `data/energy_readings.csv` (32 MB, git-ignored) and the expected gold files for Lab 2. Upload the CSV in the S3 console:
+Upload the CSV in the S3 console:
 
 1. **S3** → your data bucket → folder `bronze/`.
 2. **Create folder** `raw` (once). Open `raw/`.
@@ -189,11 +192,11 @@ Run the job on the data in S3: **AWS Glue → ETL jobs → your job → Run with
 Check your result:
 
 1. **S3** → `gold/latest/` → `energy_by_location.json` → **Open**. The file has 5 records.
-2. Compare with the expected file made in step 3. The 5 rows must match exactly:
+2. Compare with the sample file in your Apps repo (`docs/p2/sample-data/gold/latest/energy_by_location.json`, 5 rows). The rows must match exactly:
 
 ```bash
 aws s3 cp "s3://$BUCKET/gold/latest/energy_by_location.json" /tmp/by_location.json
-python3 -c "import json; print(json.load(open('/tmp/by_location.json')) == json.load(open('data/expected-gold/energy_by_location.json')))"
+python3 -c "import json; print(json.load(open('/tmp/by_location.json')) == json.load(open('../CC2026_<LastName>_<FirstName>_Apps/docs/p2/sample-data/gold/latest/energy_by_location.json')))"
 ```
 
 `True` = done. `False`? Check the sort order, the column names and order, the rounding, and that `avg_kwh_per_day` uses the unrounded total. The Glue run failed? Open it (**Runs → Error logs**).

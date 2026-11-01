@@ -24,12 +24,10 @@ bootstrap/bootstrap.env
 # Built by Terraform (archive_file) from terraform/modules/data-pipeline/lambda/handler.py
 *.zip
 
-# P2: the 32 MB dataset is generated locally (scripts/generate_dataset.py)
+# P2: the 32 MB dataset comes from the course channel; never commit it
 data/energy_readings.csv
 
 # Python caches
 __pycache__/
 *.pyc
 
-# P2: expected gold files made by scripts/generate_dataset.py --expected-gold data/expected-gold
-data/expected-gold/
