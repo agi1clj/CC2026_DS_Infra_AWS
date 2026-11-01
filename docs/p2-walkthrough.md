@@ -32,6 +32,21 @@ flowchart LR
 
 One bucket, three zones (prefixes): `bronze/` raw upload (never changed), `silver/` clean typed Parquet, `gold/` small JSON files for the backend. Every run writes the gold files twice: to `gold/by-timestamp/<yyyyMMddTHHmmssZ>/` (history, never deleted) and to `gold/latest/` (overwritten, written last). The backend reads `gold/latest/` only.
 
+### Medallion in one minute
+
+The same reading travels through three layers. Each layer answers one question.
+
+| Layer | Question it answers | One reading in this layer |
+|---|---|---|
+| Bronze | What did we receive? | `device-001,2025-11-01T00:00:00Z,20.81,57.53,0.0575,Office-A`: text, exactly as uploaded, bad rows included |
+| Silver | Which rows can we trust? | The same reading with real types: `timestamp` is a timestamp, `kwh` is a number, one row per `device_id` + `timestamp`. Stored as Parquet in `silver/energy_readings/date=2025-11-01/` |
+| Gold | What does the dashboard ask? | 288 silver readings of one day become 1 record: `{"device_id":"device-001","location":"Office-A","date":"2025-11-01","total_kwh":18.419,"avg_temperature":21.09,"avg_humidity":55.02,"readings":288}` |
+
+- You never change bronze. If a cleaning rule is wrong, fix the rule and run again from bronze.
+- Silver is large and clean. Only the pipeline reads it.
+- Gold is small and shaped for one question. The backend reads only gold. 500,000 rows never go to the browser.
+- Each layer is rebuilt from the layer before it. This is why uploading again is safe.
+
 **Cost:** Glue costs about USD 0.05–0.15 per run. Lambda, EventBridge and S3 cost cents. Do not run the job in a loop.
 
 ---
