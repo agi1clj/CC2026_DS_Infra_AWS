@@ -103,3 +103,17 @@ def test_too_dirty_sample_file_trips_the_reject_ratio():
     _, rejected, _ = etl.clean(raw)
     with pytest.raises(ValueError, match="Too many rejected rows"):
         etl.check_reject_ratio(len(raw), len(rejected), 0.10)
+
+
+def test_gold_by_location_shape():
+    raw = frame(
+        {"kwh": "0.10"},
+        {"timestamp": "2025-11-01T00:05:00Z", "kwh": "0.20"},
+        {"timestamp": "2025-11-02T00:00:00Z", "kwh": "0.30"},
+        {"device_id": "device-002", "location": "Lab", "kwh": "1"},
+    )
+    silver, _, _ = etl.clean(raw)
+    assert etl.gold_by_location(silver) == [
+        {"location": "Lab", "total_kwh": 1.0, "devices": 1, "avg_kwh_per_day": 1.0},
+        {"location": "Office-A", "total_kwh": 0.6, "devices": 1, "avg_kwh_per_day": 0.3},
+    ]

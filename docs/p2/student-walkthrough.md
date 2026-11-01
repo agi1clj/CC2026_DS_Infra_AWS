@@ -2,15 +2,14 @@
 
 You upload a CSV with 525,600 energy readings. AWS cleans it and writes small JSON files. Teams tells you when it ends.
 
-**Time:** Lab 1 about 90 minutes (the pipeline). Lab 2 about 90 minutes (Teams, failing runs, one Python function). The Terraform apply takes 5-10 minutes (Beanstalk restarts). Each Glue run takes 3-4 minutes. Cost: about USD 0.05-0.15 per Glue run, so do not run the job in a loop.
+**Time:** Lab 1 about 90 minutes (the pipeline). Lab 2 about 60 minutes (Teams, failing runs, study the pipeline). The Terraform apply takes 5-10 minutes (Beanstalk restarts). Each Glue run takes 3-4 minutes. Cost: about USD 0.05-0.15 per Glue run, so do not run the job in a loop.
 
 Replace `<github-user>`, `<LastName>_<FirstName>` and `<initials>` as in the [P1 walkthrough](../p1/student-walkthrough.md). Work in your Infra repo. Run `export AWS_PROFILE=cc2026` in every new terminal.
 
-## Provided and you build
+## What is provided
 
-- **Provided:** S3 bucket, Glue job, Lambda, EventBridge rules, IAM, Teams card (Terraform). The Glue script for bronze to silver and the gold files `daily_energy_by_device.json` and `latest_readings.json`.
-- **You build (Lab 2):** one function, `gold_by_location` (`energy_by_location.json`). Then the charts and API in the Apps repo.
-- **Optional bonus:** see the end.
+- **Provided:** S3 bucket, Glue job, Lambda, EventBridge rules, IAM, Teams card (Terraform). The Glue script: bronze to silver (with `silver/rejected/`) and three gold files.
+- **You build later:** the API and charts in the Apps repo. This lab shows you where the data comes from.
 
 ## How it works
 
@@ -105,7 +104,8 @@ Observe only. Never edit the job, rules or Lambda in the console: the next Terra
 4. **S3** → your bucket:
    - `silver/energy_readings/`: one folder per day.
    - `silver/rejected/rejected_rows.csv`: 5,185 rows with `reject_reason`. `silver/_run_summary.json`: the counts.
-   - `gold/by-timestamp/`: one folder per run (history). `gold/latest/`: the files the backend reads.
+   - `gold/by-timestamp/`: one folder per run (history). `gold/latest/`: the files the backend reads. Both hold three files:
+     `daily_energy_by_device.json` (1825 records), `energy_by_location.json` (5) and `latest_readings.json` (200).
 
 Silver has 525,600 rows, 5,185 rows are rejected, and 2,110 duplicates are gone. CLI alternative: `aws s3 ls "s3://$BUCKET/gold/latest/"`
 
@@ -113,7 +113,7 @@ Silver has 525,600 rows, 5,185 rows are rejected, and 2,110 duplicates are gone.
 
 ---
 
-# Lab 2 — Teams, failing runs and your function (about 90 minutes)
+# Lab 2 — Teams, failing runs, study the pipeline (about 60 minutes)
 
 ## 5. Add Teams (optional)
 
@@ -159,49 +159,18 @@ Upload two files to `bronze/raw/` in the S3 console, one after the other (wait u
 
 Find the failure: **AWS Glue → ETL jobs → your job → Runs**. The run shows **Failed**. Open it: **Error message** has the text above, **Error logs** has the Python traceback. With Teams, you also get a red card. Silver and `gold/latest/` keep the data of the last good run (check the time stamps in S3).
 
-## 7. Your function: `gold_by_location`
+## 7. Study the pipeline
 
-Open `terraform/modules/data-pipeline/glue/energy_etl.py`. Each gold file comes from one function. It gets the silver table, a pandas DataFrame `df` with columns `device_id, timestamp, temperature, humidity, kwh, location, date`. It returns a list of records (dicts). The script writes the files for you.
+Open `terraform/modules/data-pipeline/glue/energy_etl.py`. Read it in this order, so you can explain each layer:
 
-Provided: `gold_daily_by_device` (aggregate) and `gold_latest_readings` (sort and take 200). **You complete `gold_by_location`** for `energy_by_location.json`: 5 records `{location, total_kwh, devices, avg_kwh_per_day}`, sorted by `location`. `avg_kwh_per_day` is the total kWh divided by the number of days.
+1. `clean(raw)`: types the columns, applies the rules, splits **rejected** rows (with `reject_reason`) from valid rows, removes duplicates, adds `date`.
+2. `check_reject_ratio`: stops the run before any write if more than 10 % of the rows are rejected.
+3. `write_silver`: Parquet per date, `silver/rejected/rejected_rows.csv`, `silver/_run_summary.json`.
+4. `gold_daily_by_device`, `gold_by_location`, `gold_latest_readings`: each takes the silver table and returns a list of records (`groupby` + `agg`, or sort + `head(200)`).
+5. `GOLD_OUTPUTS`: the file name of each gold function.
+6. `write_gold`: writes `gold/by-timestamp/<time>/` first and `gold/latest/` last, so `latest` changes only after a complete run.
 
-The finished example, line by line:
-
-```python
-def gold_daily_by_device(df):
-    daily = (
-        df.groupby(["device_id", "location", "date"], as_index=False)  # one group per device and day
-        .agg(
-            total_kwh=("kwh", "sum"),                  # new column = (source column, function)
-            avg_temperature=("temperature", "mean"),
-            avg_humidity=("humidity", "mean"),
-            readings=("kwh", "size"),                  # number of rows in the group
-        )
-        .sort_values(["device_id", "date"])            # the order of the output file
-    )
-    daily["total_kwh"] = daily["total_kwh"].round(3)   # round(decimals)
-    daily["avg_temperature"] = daily["avg_temperature"].round(2)
-    daily["avg_humidity"] = daily["avg_humidity"].round(2)
-    return daily.to_dict("records")                    # list of dicts = JSON array
-```
-
-In the script, `gold_by_location` is a skeleton. Replace each `TODO`: the grouping column, `"nunique"` for `devices` (count of distinct values), and `3` in `.round(3)`. Delete the `raise NotImplementedError` line. Then un-comment its line in `GOLD_OUTPUTS`. Push, then start a manual `terraform` run with **Apply** ticked (step 2): it uploads the new script.
-
-Run the job on the data in S3: **AWS Glue → ETL jobs → your job → Run with parameters**, `--bucket` (your bucket) and `--key` (`bronze/raw/energy_readings.csv`). Or upload `energy_readings.csv` again.
-
-Check your result:
-
-1. **S3** → `gold/latest/` → `energy_by_location.json` → **Open**. The file has 5 records.
-2. Compare with the sample file in your Apps repo (`docs/p2/sample-data/gold/latest/energy_by_location.json`, 5 rows). The rows must match exactly:
-
-```bash
-aws s3 cp "s3://$BUCKET/gold/latest/energy_by_location.json" /tmp/by_location.json
-python3 -c "import json; print(json.load(open('/tmp/by_location.json')) == json.load(open('../CC2026_<LastName>_<FirstName>_Apps/docs/p2/sample-data/gold/latest/energy_by_location.json')))"
-```
-
-`True` = done. `False`? Check the sort order, the column names and order, the rounding, and that `avg_kwh_per_day` uses the unrounded total. The Glue run failed? Open it (**Runs → Error logs**).
-
-**Lab 2 is done when** the output is `True`.
+**Lab 2 is done when** you can explain, for one row of bronze, where it ends up: silver, `silver/rejected/` or removed as a duplicate, and in which gold files it counts.
 
 ---
 
@@ -226,12 +195,12 @@ Then open `docs/p2/challenge.md`. The backend can already read `gold/latest/` (`
 | Symptom | Fix |
 |---|---|
 | No Lambda log line after upload | Use exact key `bronze/raw/<name>.csv`. Check `aws s3 ls "s3://$BUCKET/bronze/raw/"` |
-| `FAILED` with a Python error after your edit | `aws logs tail /aws-glue/python-jobs/error --log-stream-name-prefix <run-id>` |
-| Edit not used by the job | Start a manual `terraform` run with **Apply** ticked after the push. It uploads the script |
+| `FAILED` with a Python error after a script edit (bonus) | `aws logs tail /aws-glue/python-jobs/error --log-stream-name-prefix <run-id>` |
+| Script edit not used by the job (bonus) | Start a manual `terraform` run with **Apply** ticked after the push. It uploads the script |
 | No Teams card | Search the Lambda log for `Teams notification failed` or `No Teams webhook configured`. Check secret `TEAMS_WEBHOOK_URL` and run the workflow again. Check the flow run history in Power Automate |
 
 Clean up: `./scripts/cleanup.sh` removes the pipeline too. It empties the bucket first.
 
 ## Bonus (optional)
-- A time-grouping gold file, for example `energy_by_hour.json` (`df["timestamp"].dt.hour`, `dt.dayofweek` or `df["date"].str[:7]`). Register it in `GOLD_OUTPUTS`.
-- One extra data-quality rule in `clean()`, for example reject `kwh` above 5. Upload a small CSV with bad rows and check `silver/rejected/`.
+- Add your own gold function with a time grouping (hour of day: `df["timestamp"].dt.hour`, weekday: `dt.dayofweek`, or month: `df["date"].str[:7]`). Register it in `GOLD_OUTPUTS`, push, and run the terraform workflow (CI/CD uploads the script).
+- Add one data-quality rule in `clean()`, for example reject `kwh` above 5, with a test in `test_energy_etl.py`.

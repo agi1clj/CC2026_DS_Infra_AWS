@@ -1,7 +1,6 @@
 """CC2026 P2 - energy ETL (AWS Glue Python shell job).
 
 bronze (raw CSV) -> silver (clean Parquet, one folder per date) -> gold (JSON files).
-Provided: bronze -> silver and two gold files. Students add gold_by_location.
 
 Arguments:
   --bucket            data bucket name
@@ -110,28 +109,16 @@ def gold_daily_by_device(df):
     return daily.to_dict("records")                    # list of dicts = JSON array
 
 
-# ----- YOUR PART (see docs/p2/student-walkthrough.md) -----------------------------------
-# Complete gold_by_location in the same pattern as gold_daily_by_device, then remove the #
-# in front of its line in GOLD_OUTPUTS below.
-# ----------------------------------------------------------------------------------------
-
 def gold_by_location(df):
-    """One record per location: location, total_kwh, devices, avg_kwh_per_day."""
-    raise NotImplementedError("Complete gold_by_location, then register it in GOLD_OUTPUTS")
+    """One record per location: total kWh, number of devices, average kWh per day."""
     by_location = (
-        df.groupby("TODO: the grouping column", as_index=False)
-        .agg(
-            total_kwh=("kwh", "sum"),
-            devices=("device_id", "TODO: count distinct values"),  # hint: "nunique"
-            days=("date", "nunique"),
-        )
+        df.groupby("location", as_index=False)
+        .agg(total_kwh=("kwh", "sum"), devices=("device_id", "nunique"), days=("date", "nunique"))
         .sort_values("location")
     )
-    # avg_kwh_per_day = UNROUNDED total / days
     by_location["avg_kwh_per_day"] = (by_location["total_kwh"] / by_location["days"]).round(3)
     by_location["total_kwh"] = by_location["total_kwh"].round(3)
     return by_location[["location", "total_kwh", "devices", "avg_kwh_per_day"]].to_dict("records")
-
 
 
 def gold_latest_readings(df):
@@ -144,7 +131,7 @@ def gold_latest_readings(df):
 # The gold files this job writes: file name -> function.
 GOLD_OUTPUTS = {
     "daily_energy_by_device.json": gold_daily_by_device,
-    # "energy_by_location.json": gold_by_location,        # TODO: you write this function
+    "energy_by_location.json": gold_by_location,
     "latest_readings.json": gold_latest_readings,
 }
 
