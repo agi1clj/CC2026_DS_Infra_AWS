@@ -64,6 +64,14 @@ variable "student_initials" {
   }
 }
 
+variable "teams_webhook_url" {
+  description = "Microsoft Teams Workflows webhook URL for the P2 pipeline cards. Empty = no Teams notifications. Secret: set it in the git-ignored terraform.tfvars or the GitHub secret TEAMS_WEBHOOK_URL."
+  type        = string
+  default     = ""
+  sensitive   = true
+  nullable    = false
+}
+
 variable "vpc_cidr" {
   description = "CIDR block of the project VPC."
   type        = string

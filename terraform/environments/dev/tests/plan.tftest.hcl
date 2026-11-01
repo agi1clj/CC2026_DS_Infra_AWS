@@ -22,6 +22,30 @@ mock_provider "aws" {
     defaults = { arn = "arn:aws:iam::123456789012:role/cc2026-agi-dev-mock" }
   }
 
+  mock_data "aws_region" {
+    defaults = { region = "eu-central-1" }
+  }
+
+  mock_data "aws_caller_identity" {
+    defaults = { account_id = "123456789012" }
+  }
+
+  mock_resource "aws_lambda_function" {
+    defaults = { arn = "arn:aws:lambda:eu-central-1:123456789012:function:cc2026-agi-dev-pipeline" }
+  }
+
+  mock_resource "aws_cloudwatch_event_rule" {
+    defaults = { arn = "arn:aws:events:eu-central-1:123456789012:rule/cc2026-agi-dev-mock" }
+  }
+
+  mock_resource "aws_cloudwatch_log_group" {
+    defaults = { arn = "arn:aws:logs:eu-central-1:123456789012:log-group:/aws/lambda/cc2026-agi-dev-pipeline" }
+  }
+
+  mock_resource "aws_ssm_parameter" {
+    defaults = { arn = "arn:aws:ssm:eu-central-1:123456789012:parameter/cc2026-agi-dev/teams-webhook-url" }
+  }
+
   mock_resource "aws_cloudfront_distribution" {
     defaults = { domain_name = "d111111abcdef8.cloudfront.net" }
   }
@@ -127,4 +151,55 @@ run "rejects_bad_initials" {
   }
 
   expect_failures = [var.student_initials]
+}
+
+run "pipeline_names_and_wiring" {
+  command = apply # against the mocked provider only
+
+  assert {
+    condition     = module.naming.data_bucket_name == "cc2026-agi-dev-data-123456789012" && module.storage.name == module.naming.data_bucket_name
+    error_message = "Unexpected data bucket name: ${module.naming.data_bucket_name}"
+  }
+
+  assert {
+    condition     = startswith(module.data_pipeline.glue_job_name, "cc2026-agi-dev-") && startswith(module.data_pipeline.lambda_function_name, "cc2026-agi-dev-")
+    error_message = "Glue job and Lambda names must follow the name base."
+  }
+
+  assert {
+    condition     = startswith(module.data_pipeline.glue_role_name, module.naming.iam_role_prefix) && startswith(module.data_pipeline.lambda_role_name, module.naming.iam_role_prefix)
+    error_message = "Pipeline IAM roles must start with the IAM prefix (the Infra CI role manages nothing else)."
+  }
+
+  assert {
+    condition     = startswith(aws_iam_role_policy.backend_reads_gold.name, "read") && aws_iam_role_policy.backend_reads_gold.role == module.beanstalk.instance_role_name
+    error_message = "The Beanstalk instance role must get the gold read policy."
+  }
+
+  assert {
+    condition     = module.beanstalk.environment_properties.DATA_BUCKET == module.storage.name && module.beanstalk.environment_properties.GOLD_PREFIX == "gold/"
+    error_message = "The containers need DATA_BUCKET and GOLD_PREFIX."
+  }
+}
+
+run "teams_skipped_without_webhook" {
+  command = apply # against the mocked provider only
+
+  assert {
+    condition     = length(module.data_pipeline.teams_parameter_names) == 0 && !module.data_pipeline.teams_enabled
+    error_message = "No SSM parameter must be created without a webhook URL."
+  }
+}
+
+run "teams_webhook_is_stored_as_secure_string" {
+  command = apply # against the mocked provider only
+
+  variables {
+    teams_webhook_url = "https://example.invalid/webhook"
+  }
+
+  assert {
+    condition     = module.data_pipeline.teams_enabled && length(module.data_pipeline.teams_parameter_names) == 1
+    error_message = "A webhook URL must create the SSM SecureString parameter."
+  }
 }

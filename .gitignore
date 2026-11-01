@@ -20,3 +20,6 @@ bootstrap/bootstrap.env
 .DS_Store
 .idea/
 .vscode/
+
+# Built by Terraform (archive_file) from terraform/modules/data-pipeline/lambda/handler.py
+*.zip

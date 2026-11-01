@@ -11,6 +11,48 @@ module "container_registry" {
   repository_names = module.naming.ecr_repository_names
 }
 
+module "storage" {
+  source = "../../modules/storage"
+
+  name = module.naming.data_bucket_name
+}
+
+module "data_pipeline" {
+  source = "../../modules/data-pipeline"
+
+  bucket_name       = module.storage.name
+  bucket_arn        = module.storage.arn
+  iam_role_prefix   = module.naming.iam_role_prefix
+  names             = module.naming.pipeline_names
+  teams_webhook_url = var.teams_webhook_url
+}
+
+# The backend reads the gold JSON files only (never bronze or silver).
+data "aws_iam_policy_document" "backend_reads_gold" {
+  statement {
+    sid       = "ReadGold"
+    actions   = ["s3:GetObject"]
+    resources = ["${module.storage.arn}/gold/*"]
+  }
+
+  statement {
+    sid       = "ListGold"
+    actions   = ["s3:ListBucket"]
+    resources = [module.storage.arn]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["gold/*"]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "backend_reads_gold" {
+  name   = "read-gold"
+  role   = module.beanstalk.instance_role_name
+  policy = data.aws_iam_policy_document.backend_reads_gold.json
+}
+
 module "cdn" {
   source = "../../modules/cdn"
   count  = var.enable_cdn ? 1 : 0
@@ -32,8 +74,11 @@ module "beanstalk" {
   instance_type      = var.instance_type
   public_url         = local.app_url
 
-  # Extension point: extra environment variables, e.g. { DATA_BUCKET = module.storage.name }
-  environment_properties = {}
+  # Extension point: extra environment variables for the containers.
+  environment_properties = {
+    DATA_BUCKET = module.storage.name
+    GOLD_PREFIX = "gold/"
+  }
 }
 
 # Warns (does not fail) if Elastic Beanstalk assigned a different host name than the one
