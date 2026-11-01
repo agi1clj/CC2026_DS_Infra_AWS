@@ -30,4 +30,3 @@ data/energy_readings.csv
 # Python caches
 __pycache__/
 *.pyc
-
