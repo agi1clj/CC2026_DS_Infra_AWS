@@ -133,13 +133,14 @@ curl -sS -o /dev/null -w '%{http_code}\n' -H 'Content-Type: application/json' \
   "$TEAMS_WEBHOOK_URL"
 ```
 
-Store the URL in two places:
+Store the URL (the secret prompts, so the URL stays out of your shell history):
 ```bash
-gh secret set TEAMS_WEBHOOK_URL --repo <github-user>/CC2026_<LastName>_<FirstName>_Infra_AWS   # paste when asked
-echo 'teams_webhook_url = "<paste the URL>"' > terraform/environments/dev/teams.auto.tfvars   # git-ignored
+gh secret set TEAMS_WEBHOOK_URL --repo <github-user>/CC2026_<LastName>_<FirstName>_Infra_AWS
 ```
-
-Deploy again and repeat the upload. Run the terraform workflow (as in step 2), then:
+- The GitHub secret is required: the terraform workflow reads it.
+- `terraform/environments/dev/teams.auto.tfvars` (git-ignored, line `teams_webhook_url = "<URL>"`, made in an editor) is only for `terraform apply` on your own machine.
+- Never commit the URL. Never paste it in chat or in the README.
+- Run the terraform workflow again (step 2). Terraform stores the URL in SSM and the Lambda reads it. Then upload again:
 
 ```bash
 aws s3 cp data/energy_readings.csv "s3://$BUCKET/bronze/raw/energy_readings.csv"
@@ -273,7 +274,6 @@ Different? Check in this order: sort order, rounding, column names and order, un
 **Lab 2 is done when** both files print `OK`.
 
 ## Optional bonus
-
 1. **Time grouping:** a gold file such as `energy_by_hour.json` (`df["timestamp"].dt.hour`, `dt.dayofweek` or `df["date"].str[:7]`). Register it.
 2. **Data-quality rule** in `clean()`, for example reject `kwh` above 5. Upload a small CSV with bad rows and check `silver/rejected/`.
 
@@ -285,7 +285,6 @@ Different? Check in this order: sort order, rounding, column names and order, un
 - The webhook URL is in an SSM SecureString and also in the Terraform state. We accept this limit.
 
 ## Next: Apps challenge
-
 Open `docs/p2/challenge.md` in the Apps repository. The backend can already read `gold/latest/` (`DATA_BUCKET`, `GOLD_PREFIX`). You add the endpoints and charts. IMDS problems: see [extending.md](../extending.md#how-p2-is-built-reference).
 
 ## Troubleshooting
