@@ -1,6 +1,7 @@
 """CC2026 P2 - energy ETL (AWS Glue Python shell job).
 
 bronze (raw CSV) -> silver (clean Parquet, one folder per date) -> gold (JSON files).
+Provided: bronze -> silver and one gold file. Students add the other gold files.
 Arguments: --bucket <name> --key <bronze object key, e.g. bronze/raw/energy_readings.csv>
 The job raises an error when a required column is missing. Glue then reports FAILED.
 """
@@ -92,30 +93,20 @@ def gold_daily_by_device(df):
     return daily[columns].to_dict("records")
 
 
-def gold_by_location(df):
-    """One record per location: total kWh, number of devices, average kWh per day."""
-    by_location = (
-        df.groupby("location", as_index=False)
-        .agg(total_kwh=("kwh", "sum"), devices=("device_id", "nunique"), days=("date", "nunique"))
-        .sort_values("location")
-    )
-    by_location["avg_kwh_per_day"] = py_round(by_location["total_kwh"] / by_location["days"], 3)
-    by_location["total_kwh"] = py_round(by_location["total_kwh"], 3)
-    return by_location[["location", "total_kwh", "devices", "avg_kwh_per_day"]].to_dict("records")
-
-
-def gold_latest_readings(df):
-    """The 200 most recent readings, newest first."""
-    latest = df.sort_values(["timestamp", "device_id"], ascending=False).head(200).copy()
-    latest["timestamp"] = latest["timestamp"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-    return latest[REQUIRED_COLUMNS].to_dict("records")
+# ----- YOUR PART (see docs/p2-walkthrough.md) -----------------------------------------
+# Add one function per new gold file, in the same pattern as gold_daily_by_device:
+#   def gold_by_location(df):    # energy_by_location.json: location, total_kwh, devices, avg_kwh_per_day
+#   def gold_latest_readings(df):  # latest_readings.json: the 200 newest readings, newest first
+# Then register each function in GOLD_OUTPUTS below.
+# Bonus: a gold file with a time grouping (hour of day, weekday or month).
+# ----------------------------------------------------------------------------------------
 
 
 # The gold files this job writes: file name -> function.
 GOLD_OUTPUTS = {
     "daily_energy_by_device.json": gold_daily_by_device,
-    "energy_by_location.json": gold_by_location,
-    "latest_readings.json": gold_latest_readings,
+    # "energy_by_location.json": gold_by_location,        # TODO: you write this function
+    # "latest_readings.json": gold_latest_readings,       # TODO: you write this function
 }
 
 
