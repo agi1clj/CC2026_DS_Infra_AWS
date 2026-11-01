@@ -39,7 +39,7 @@ Rules for the pipeline:
 - Every IAM role and policy starts with `module.naming.iam_role_prefix` (`glue-etl`, `pipeline-lambda`). `PowerUserAccess` of the Infra CI role covers S3, Glue, Lambda, EventBridge, SSM and CloudWatch Logs, so `bootstrap.sh` does not need to run again.
 - The Glue script is uploaded with `aws_s3_object` (`etag` = file hash): a changed script redeploys with the next terraform run.
 - The Teams URL is the sensitive variable `teams_webhook_url` (GitHub secret `TEAMS_WEBHOOK_URL`). Empty = no SSM parameter and no cards. Teams errors never fail the pipeline. The URL is stored in the Terraform state.
-- Python shell jobs run Python 3.9 only. The job pins pandas 2.2.3, pyarrow 18.1.0 and numpy 1.26.4 with `--additional-python-modules` (the preinstalled `analytics` set has pandas 1.4.2). The pytest step in `terraform.yml` uses the same versions on Python 3.12 (prebuilt wheels). AWS treats Python shell as a legacy job type; Glue Spark or Lambda are the migration paths.
+- Python shell jobs run Python 3.9. The job pins pandas, pyarrow and numpy in `--additional-python-modules`; the pytest step in `terraform.yml` uses the same versions.
 - The bucket is versioned; a lifecycle rule expires old versions after 7 days.
 - Add a gold file: write a function in `energy_etl.py` and add it to `GOLD_OUTPUTS`.
 

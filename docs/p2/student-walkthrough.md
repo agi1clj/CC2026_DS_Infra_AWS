@@ -15,7 +15,7 @@ Replace `<github-user>`, `<LastName>_<FirstName>` and `<initials>` as in the [P1
 
 Terms: **S3** is file storage (a **prefix** is a folder name). **Parquet** is a compressed column format. **Glue** runs your Python script as a job. **EventBridge** routes AWS events. A **Lambda** is a small function that runs on an event. **SSM** (Parameter Store) keeps secrets.
 
-Three layers (the **medallion**):
+### Medallion in one minute
 
 - **Bronze** = what we received: the raw CSV, never changed, bad rows included. Example: `device-001,2025-11-01T00:00:00Z,20.81,57.53,0.0575,Office-A`.
 - **Silver** = the rows we trust: typed (real timestamp and numbers), one row per `device_id` + `timestamp`, stored as Parquet in `silver/energy_readings/date=2025-11-01/`. Rows that break a rule go to `silver/rejected/` with a **`reject_reason`** column (why the row was rejected).
@@ -70,6 +70,7 @@ BUCKET=$(terraform -chdir=terraform/environments/dev output -raw data_bucket_nam
 Download `energy_readings.csv` from the course channel (Teams, Files) and save it as `data/energy_readings.csv`. It has 532,895 rows and 32 MB. Git ignores this file. Check it:
 
 ```bash
+mkdir -p data                      # then save the file in data/
 wc -l data/energy_readings.csv    # 532896 (the header counts)
 head -3 data/energy_readings.csv  # device_id,timestamp,temperature,humidity,kwh,location
 ```
@@ -148,7 +149,6 @@ Upload `energy_readings.csv` again (console or CLI). Teams shows a green card **
 
 - Same file again: silver is overwritten, a new folder appears under `gold/by-timestamp/`, and `gold/latest/` is updated.
 - Wait about a minute between uploads, and until the Glue run has ended.
-- A different or small file (for example `data/energy_sample.csv`) replaces silver and `gold/latest/` with its data. History stays in `gold/by-timestamp/`. Upload `energy_readings.csv` again to restore.
 
 ## 6. Study the pipeline
 
@@ -164,11 +164,6 @@ Open `terraform/modules/data-pipeline/glue/energy_etl.py`. Read it in this order
 **Lab 2 is done when** you can explain, for one row of bronze, where it ends up: silver, `silver/rejected/` or removed as a duplicate, and in which gold files it counts.
 
 ---
-
-## Limits
-- Every upload replaces the data. Production pipelines append or merge new data instead of replacing it.
-- Glue Python shell is a cheap teaching choice for 32 MB. The job runs Python 3.9 with pinned pandas and pyarrow versions.
-- The webhook URL is in an SSM SecureString and also in the Terraform state. We accept this limit.
 
 ## Next: Apps challenge
 Get the Apps code (also a PR). In your Apps repo, on `main`:
