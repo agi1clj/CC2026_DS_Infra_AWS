@@ -4,6 +4,7 @@ Terraform, bootstrap and CI/CD for the *Cloud Computing* project (UTCN, 2026–2
 
 > Students: name your copy `CC2026_LastName_FirstName_Infra_AWS`. This reference copy is called `CC2026_DS_Infra_AWS`.
 > **Start with [docs/p1/student-walkthrough.md](docs/p1/student-walkthrough.md)**.
+> **Part 2 (data pipeline): start with [docs/p2/student-walkthrough.md](docs/p2/student-walkthrough.md)**. Part 1 must be deployed first.
 
 ## Quick start (about 15 minutes)
 
