@@ -39,7 +39,8 @@ Rules for the pipeline:
 - Every IAM role and policy starts with `module.naming.iam_role_prefix` (`glue-etl`, `pipeline-lambda`). `PowerUserAccess` of the Infra CI role covers S3, Glue, Lambda, EventBridge, SSM and CloudWatch Logs, so `bootstrap.sh` does not need to run again.
 - The Glue script is uploaded with `aws_s3_object` (`etag` = file hash): a changed script redeploys with the next terraform run.
 - The Teams URL is the sensitive variable `teams_webhook_url` (GitHub secret `TEAMS_WEBHOOK_URL`). Empty = no SSM parameter and no cards. Teams errors never fail the pipeline. The URL is stored in the Terraform state.
-- Python shell jobs use Python 3.9 and the `analytics` library set (pandas 1.4, awswrangler 2.15 with pyarrow). AWS marks Python shell as a legacy job type; Glue Spark or Lambda are the migration paths.
+- Python shell jobs run Python 3.9 only. The job pins pandas 2.2.3, pyarrow 18.1.0 and numpy 1.26.4 with `--additional-python-modules` (the preinstalled `analytics` set has pandas 1.4.2). The same versions run the pytest step in `terraform.yml`. AWS treats Python shell as a legacy job type; Glue Spark or Lambda are the migration paths.
+- The bucket is versioned; a lifecycle rule expires old versions after 7 days.
 - Add a gold file: write a function in `energy_etl.py` and add it to `GOLD_OUTPUTS`.
 
 **IMDS note**: the instance requires IMDSv2 with a hop limit of 1, so containers on the Compose network cannot reach the instance role yet. Either run the backend with `network_mode: host` in `docker-compose.yml` (then the proxy must use `host.docker.internal:8000`), or add a platform hook in the bundle (`.platform/hooks/predeploy/`) that raises the hop limit: `aws ec2 modify-instance-metadata-options --instance-id <id> --http-put-response-hop-limit 2` (the instance role then needs `ec2:ModifyInstanceMetadataOptions` on itself). The backend (Apps repo) then uses `boto3.client("s3")` without credentials in code.

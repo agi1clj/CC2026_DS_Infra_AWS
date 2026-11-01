@@ -117,6 +117,6 @@ Start with **[docs/p2/student-walkthrough.md](docs/p2/student-walkthrough.md)**.
 | Glue script: bronze to silver and `daily_energy_by_device.json` | Optional: a time-grouping gold file and a data-quality rule |
 | Dataset generator `scripts/generate_dataset.py`, `data/energy_sample.csv`, `data/energy_invalid.csv` | Charts and API in the Apps repo (`docs/p2/challenge.md` there) |
 
-The Teams webhook URL is a secret: GitHub secret `TEAMS_WEBHOOK_URL` (terraform workflow) and `teams_webhook_url` in the git-ignored `terraform.tfvars`. Empty = no cards. Cost: about USD 0.05–0.15 per Glue run.
+The Teams webhook URL is a secret: GitHub secret `TEAMS_WEBHOOK_URL` (terraform workflow) and `teams_webhook_url` in the git-ignored `terraform/environments/dev/teams.auto.tfvars`. Empty = no cards. Cost: about USD 0.05–0.15 per Glue run.
 
 More: [docs/extending.md](docs/extending.md) (how P2 is built, P3 sign-in with Cognito).

@@ -25,7 +25,7 @@ Teaching project (UTCN Cloud Computing). AWS infra for the companion Apps reposi
 - Never create or delete the account's GitHub OIDC provider by hand; `create_github_oidc_provider` is decided once by `bootstrap.sh`.
 - P2: the Teams webhook URL is the sensitive variable `teams_webhook_url` (GitHub secret `TEAMS_WEBHOOK_URL`); never commit it or put it in plain Lambda/Glue settings. Teams errors must never fail the pipeline. Never commit the 32 MB `data/energy_readings.csv`.
 - P2: Glue job and Lambda IAM roles use `iam_role_prefix` and least privilege (bronze read, silver/gold write). The Beanstalk instance role may read only `gold/latest/`. Gold runs write `gold/by-timestamp/<run time>/` (history, never deleted) first and `gold/latest/` last.
-- P2: the Glue script keeps its small-function layout (`clean`, `write_silver`, `gold_*`, `GOLD_OUTPUTS`). Students add gold functions there. Glue Python shell: Python 3.9, 1 DPU, `library-set=analytics`.
+- P2: the Glue script keeps its small-function layout (`clean`, `write_silver`, `gold_*`, `GOLD_OUTPUTS`). Students add gold functions there. Glue Python shell: Python 3.9, 1 DPU, `library-set=analytics`, pandas and pyarrow pinned in the job's `--additional-python-modules`; keep the pins equal to the pytest step in `terraform.yml`. The script is tested with pytest (`glue/test_energy_etl.py`). Silver keeps rejected rows in `silver/rejected/`.
 - Commits follow Conventional Commits: `type(scope): summary` with type in feat, fix, docs, refactor, test, ci, build, chore.
 
 ## Agent skills (recommended)
