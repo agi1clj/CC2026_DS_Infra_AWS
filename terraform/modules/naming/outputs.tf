@@ -33,6 +33,22 @@ output "ecr_repository_names" {
   value       = { for app in ["backend", "frontend"] : app => "${local.name_base}/${app}" }
 }
 
+output "data_bucket_name" {
+  description = "S3 data bucket of the P2 pipeline (bronze, silver and gold prefixes)."
+  value       = "${local.name_base}-data-${var.aws_account_id}"
+}
+
+output "pipeline_names" {
+  description = "Names of the P2 pipeline resources (Glue job, Lambda function, EventBridge rules, SSM parameter). IAM names use iam_role_prefix."
+  value = {
+    glue_job            = "${local.name_base}-energy-etl"
+    lambda_function     = "${local.name_base}-pipeline"
+    rule_object_created = "${local.name_base}-bronze-csv-created"
+    rule_job_state      = "${local.name_base}-glue-job-state"
+    teams_webhook_param = "/${local.name_base}/teams-webhook-url"
+  }
+}
+
 output "iam_role_prefix" {
   description = "Prefix of every IAM role, instance profile and policy the application Terraform creates (the Infra CI role may only manage these)."
   value       = "${local.name_base}-"
