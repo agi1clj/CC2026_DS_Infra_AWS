@@ -2,9 +2,10 @@
 
 One function handles two EventBridge events:
   - S3 "Object Created" under bronze/raw/*.csv  -> start the Glue job with the object key.
+    If a run is already active, post a SKIPPED card (no error).
   - Glue "Glue Job State Change" (final states) -> post an Adaptive Card to Microsoft Teams.
-If a run is already active, the Lambda posts a SKIPPED card (no error).
-Teams problems are logged and never raise. Without a webhook parameter Teams is skipped.
+    A SUCCEEDED card shows the row counts from silver/_run_summary.json.
+Teams and summary problems are logged and never raise. Without a webhook parameter Teams is skipped.
 """
 import json
 import os
@@ -16,8 +17,10 @@ import boto3
 GLUE_JOB_NAME = os.environ["GLUE_JOB_NAME"]
 TEAMS_WEBHOOK_PARAM = os.environ.get("TEAMS_WEBHOOK_PARAM", "")
 REGION = os.environ.get("AWS_REGION", "")
+SUMMARY_KEY = "silver/_run_summary.json"
 
 glue = boto3.client("glue")
+s3 = boto3.client("s3")
 ssm = boto3.client("ssm")
 
 
@@ -44,7 +47,6 @@ def start_job(detail):
                 file_name=key,
                 run_id="-",
                 message="Another run is active. Upload the file again when it finishes.",
-                link=console_link(GLUE_JOB_NAME),
             )
         )
         return None
@@ -55,39 +57,51 @@ def start_job(detail):
 def notify(detail):
     state = detail.get("state", "UNKNOWN")
     run_id = detail.get("jobRunId", "")
-    job_name = detail.get("jobName", GLUE_JOB_NAME)
     message = detail.get("message") or ""
     file_name = ""
+    bucket = ""
     try:
-        run = glue.get_job_run(JobName=job_name, RunId=run_id)["JobRun"]
+        run = glue.get_job_run(JobName=GLUE_JOB_NAME, RunId=run_id)["JobRun"]
         file_name = run.get("Arguments", {}).get("--key", "")
+        bucket = run.get("Arguments", {}).get("--bucket", "")
         message = run.get("ErrorMessage") or message
     except Exception as exc:  # the card is still useful without these details
         print(f"get_job_run failed: {exc}")
 
     succeeded = state == "SUCCEEDED"
-    if succeeded and not message:
-        message = "Silver (Parquet) and gold (JSON, gold/latest/) were updated."
-    if not succeeded:
+    if succeeded:
+        message = describe_summary(bucket) or "Silver and gold (gold/latest/) were updated."
+    else:
         message = f"Glue state {state}. {message}".strip()
 
-    card = build_card(
-        status="SUCCEEDED" if succeeded else "FAILED",
-        file_name=file_name,
-        run_id=run_id,
-        message=message,
-        link=console_link(job_name),
+    post_to_teams(
+        build_card(
+            status="SUCCEEDED" if succeeded else "FAILED",
+            file_name=file_name,
+            run_id=run_id,
+            message=message,
+        )
     )
-    post_to_teams(card)
     return state
 
 
-def console_link(job_name):
-    return f"https://{REGION}.console.aws.amazon.com/gluestudio/home?region={REGION}#/job/{job_name}/runs"
+def describe_summary(bucket):
+    """Row counts of the last run, or "" when the summary cannot be read."""
+    try:
+        body = s3.get_object(Bucket=bucket, Key=SUMMARY_KEY)["Body"].read()
+        s = json.loads(body)
+        return (
+            f"Rows in: {s['rows_in']}. Silver: {s['rows_silver']}. "
+            f"Rejected: {s['rows_rejected']}. Duplicates removed: {s['duplicates_removed']}."
+        )
+    except Exception as exc:
+        print(f"Could not read the run summary: {exc}")
+        return ""
 
 
-def build_card(status, file_name, run_id, message, link):
+def build_card(status, file_name, run_id, message):
     color = {"SUCCEEDED": "Good", "SKIPPED": "Warning"}.get(status, "Attention")
+    link = f"https://{REGION}.console.aws.amazon.com/gluestudio/home?region={REGION}#/job/{GLUE_JOB_NAME}/runs"
     facts = [
         ("File", file_name or "(unknown)"),
         ("Run id", run_id),
