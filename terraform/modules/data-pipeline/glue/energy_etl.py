@@ -93,7 +93,7 @@ def gold_daily_by_device(df):
     return daily[columns].to_dict("records")
 
 
-# ----- YOUR PART (see docs/p2-walkthrough.md) -----------------------------------------
+# ----- YOUR PART (see docs/p2/student-walkthrough.md) -----------------------------------------
 # Add one function per new gold file, in the same pattern as gold_daily_by_device:
 #   def gold_by_location(df):    # energy_by_location.json: location, total_kwh, devices, avg_kwh_per_day
 #   def gold_latest_readings(df):  # latest_readings.json: the 200 newest readings, newest first

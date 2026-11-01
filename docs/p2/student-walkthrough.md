@@ -2,7 +2,7 @@
 
 P2 adds a data pipeline to your platform: you upload a CSV with 525,600 energy readings, and AWS cleans it and writes small JSON files. Teams tells you when it is done. About 2 hours, in two labs.
 
-Replace `<github-user>`, `<LastName>_<FirstName>` and `<initials>` as in the [P1 walkthrough](student-walkthrough.md). Work in your Infra repo.
+Replace `<github-user>`, `<LastName>_<FirstName>` and `<initials>` as in the [P1 walkthrough](../p1/student-walkthrough.md). Work in your Infra repo.
 
 ## What is provided and what you build
 
@@ -213,7 +213,7 @@ You write:
 | `gold/latest/energy_by_location.json` | 5 records: `{location, total_kwh, devices, avg_kwh_per_day}`. Sorted by `location`. |
 | `gold/latest/latest_readings.json` | 200 records: `{device_id, timestamp, temperature, humidity, kwh, location}`. Newest first. |
 
-The expected output of the full dataset is in the Apps repo, folder `docs/p2-sample-data/gold/` (or `p2-raw-data/expected-gold/` from your instructor). Rounding: `total_kwh` 3 decimals, averages 2 decimals, `avg_kwh_per_day` 3 decimals.
+The expected output of the full dataset is in the Apps repo, folder `docs/p2/sample-data/gold/` (or `p2-raw-data/expected-gold/` from your instructor). Rounding: `total_kwh` 3 decimals, averages 2 decimals, `avg_kwh_per_day` 3 decimals.
 
 ## The finished example, line by line
 
@@ -318,7 +318,7 @@ Different? Check, in this order: the sort order, the rounding, the column names 
 
 ## Next: Apps challenge
 
-Open `docs/p2-challenge.md` in the Apps repository. The backend already has read access to `gold/latest/` (variables `DATA_BUCKET` and `GOLD_PREFIX=gold/latest/`). You add the API endpoints and the charts.
+Open `docs/p2/challenge.md` in the Apps repository. The backend already has read access to `gold/latest/` (variables `DATA_BUCKET` and `GOLD_PREFIX=gold/latest/`). You add the API endpoints and the charts.
 
 ## Troubleshooting
 

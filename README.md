@@ -3,11 +3,11 @@
 Terraform, bootstrap and CI/CD for the *Cloud Computing* project (UTCN, 2026–2027) on **AWS**. It is the AWS counterpart of [`CC2026_DS_Infra`](https://github.com/agi1clj/CC2026_DS_Infra) (Azure) and runs the same, unchanged applications from [`CC2026_DS_Applications`](https://github.com/agi1clj/CC2026_DS_Applications).
 
 > Students: name your copy `CC2026_LastName_FirstName_Infra_AWS`. This reference copy is called `CC2026_DS_Infra_AWS`.
-> **Start with [docs/student-walkthrough.md](docs/student-walkthrough.md)**.
+> **Start with [docs/p1/student-walkthrough.md](docs/p1/student-walkthrough.md)**.
 
 ## Quick start (about 15 minutes)
 
-Tools: `aws` ≥ 2.32, `gh`, `terraform` ≥ 1.14, `git`, `jq`. New to AWS / free account: first follow **[docs/aws-account-setup.md](docs/aws-account-setup.md)** (account, IAM user, `aws login`, credits).
+Tools: `aws` ≥ 2.32, `gh`, `terraform` ≥ 1.14, `git`, `jq`. New to AWS / free account: first follow **[docs/p1/aws-account-setup.md](docs/p1/aws-account-setup.md)** (account, IAM user, `aws login`, credits).
 
 ```bash
 aws login --profile cc2026 --region eu-central-1   # free/personal account (IAM user)
@@ -53,7 +53,7 @@ flowchart LR
 | P2: Data Factory + Logic App + Blob Storage | Glue Python shell job + Lambda + EventBridge + one S3 bucket |
 | Two-stage create (`CREATE_WEB_APPS`) | Not needed: the environment starts with a sample app |
 
-**Cost** (eu-central-1, 24/7): ≈ USD 0.45/day, ≈ 13/month (t3.micro 8.80, Elastic IP 3.65, 8 GB disk 0.75; ECR, CloudWatch, CloudFront and S3 are cents). USD 100 of credits lasts longer than the 6-month Free plan. See [credits and limits](docs/aws-account-setup.md#3-credits-and-the-6-month-limit).
+**Cost** (eu-central-1, 24/7): ≈ USD 0.45/day, ≈ 13/month (t3.micro 8.80, Elastic IP 3.65, 8 GB disk 0.75; ECR, CloudWatch, CloudFront and S3 are cents). USD 100 of credits lasts longer than the 6-month Free plan. See [credits and limits](docs/p1/aws-account-setup.md#3-credits-and-the-6-month-limit).
 
 The instance also answers on `http://<cname>.elasticbeanstalk.com` (Elastic Beanstalk opens port 80 for single-instance environments). CloudFront adds HTTPS; it is not an access control.
 
@@ -100,7 +100,7 @@ Azure and AWS can coexist in the Apps repo; each cloud deploys only if its varia
 | Symptom | Fix |
 |---|---|
 | `Not logged in to AWS` / `session has expired` | `aws login --profile cc2026` (or `aws sso login`); sessions last up to 12 h |
-| `account must be verified` (CloudFront) | New account: `ENABLE_CDN=false ./bootstrap/bootstrap.sh`, or ask AWS Support to enable CloudFront ([details](docs/aws-account-setup.md#4-free-account-issues)) |
+| `account must be verified` (CloudFront) | New account: `ENABLE_CDN=false ./bootstrap/bootstrap.sh`, or ask AWS Support to enable CloudFront ([details](docs/p1/aws-account-setup.md#4-free-account-issues)) |
 | URL shows "Congratulations" sample page | The first deployment has not finished; watch `deploy-aws` in the Apps repo |
 | `deploy-beanstalk.sh`: deployment failed | The events printed by the workflow say why; container logs: Elastic Beanstalk console → *Logs → Request last 100 lines*, or CloudWatch log group `/aws/elasticbeanstalk/cc2026-<initials>-dev/...` |
 | Containers restart / out of memory | Set `instance_type = "t3.small"` (2 GiB, ≈ USD 17.50/month) and apply |
@@ -109,13 +109,13 @@ Azure and AWS can coexist in the Apps repo; each cloud deploys only if its varia
 
 ## P2: data pipeline (S3, Glue, Lambda, Teams)
 
-Start with **[docs/p2-walkthrough.md](docs/p2-walkthrough.md)**. An upload to `s3://<bucket>/bronze/raw/*.csv` starts a Glue Python shell job (through EventBridge and one Lambda). The job writes clean Parquet to `silver/` (one folder per date) and JSON files to `gold/by-timestamp/<run time>/` (history) and `gold/latest/` (what the backend reads). The same Lambda posts a Teams card (green SUCCEEDED, red FAILED, yellow SKIPPED when a run is already active).
+Start with **[docs/p2/student-walkthrough.md](docs/p2/student-walkthrough.md)**. An upload to `s3://<bucket>/bronze/raw/*.csv` starts a Glue Python shell job (through EventBridge and one Lambda). The job writes clean Parquet to `silver/` (one folder per date) and JSON files to `gold/by-timestamp/<run time>/` (history) and `gold/latest/` (what the backend reads). The same Lambda posts a Teams card (green SUCCEEDED, red FAILED, yellow SKIPPED when a run is already active).
 
 | Provided | You build |
 |---|---|
 | Terraform for bucket, Glue job, Lambda, rules, IAM, Teams card, backend read access to `gold/latest/` | Gold files `energy_by_location.json` and `latest_readings.json` in `energy_etl.py` (Lab 2) |
 | Glue script: bronze to silver and `daily_energy_by_device.json` | Optional: a time-grouping gold file and a data-quality rule |
-| Dataset generator `scripts/generate_dataset.py`, `data/energy_sample.csv`, `data/energy_invalid.csv` | Charts and API in the Apps repo (`docs/p2-challenge.md` there) |
+| Dataset generator `scripts/generate_dataset.py`, `data/energy_sample.csv`, `data/energy_invalid.csv` | Charts and API in the Apps repo (`docs/p2/challenge.md` there) |
 
 The Teams webhook URL is a secret: GitHub secret `TEAMS_WEBHOOK_URL` (terraform workflow) and `teams_webhook_url` in the git-ignored `terraform.tfvars`. Empty = no cards. Cost: about USD 0.05–0.15 per Glue run.
 

@@ -1,6 +1,6 @@
 # P1 — Student Walkthrough (AWS)
 
-The AWS alternative to the [Azure walkthrough](https://github.com/agi1clj/CC2026_DS_Infra/blob/main/docs/student-walkthrough.md): same apps, different cloud. About 45 minutes.
+The AWS alternative to the [Azure walkthrough](https://github.com/agi1clj/CC2026_DS_Infra/blob/main/docs/p1/student-walkthrough.md): same apps, different cloud. About 45 minutes.
 
 Replace `<LastName>_<FirstName>` (e.g. `Popescu_Ana`), `<github-user>` and `<initials>` (2–5 lowercase letters, e.g. `ap`).
 
