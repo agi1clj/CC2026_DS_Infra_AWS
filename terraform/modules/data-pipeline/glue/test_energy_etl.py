@@ -1,4 +1,6 @@
 """Unit tests for energy_etl.py (run: pytest terraform/modules/data-pipeline/glue)."""
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -93,3 +95,11 @@ def test_gold_daily_by_device_shape():
         "avg_humidity": 55.0,
         "readings": 2,
     }
+
+
+def test_too_dirty_sample_file_trips_the_reject_ratio():
+    path = Path(__file__).resolve().parents[4] / "data" / "energy_too_dirty.csv"
+    raw = pd.read_csv(path, dtype=str, keep_default_na=False, na_values=[""])
+    _, rejected, _ = etl.clean(raw)
+    with pytest.raises(ValueError, match="Too many rejected rows"):
+        etl.check_reject_ratio(len(raw), len(rejected), 0.10)
