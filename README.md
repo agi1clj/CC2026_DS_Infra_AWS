@@ -49,7 +49,8 @@ flowchart LR
 | ACR Basic | ECR repositories `cc2026-<initials>-dev/backend`, `/frontend` |
 | App Service Plan B1 + 2 Web Apps | Elastic Beanstalk single-instance Docker environment (t3.micro) running both containers |
 | `*.azurewebsites.net` HTTPS | CloudFront `https://<id>.cloudfront.net` (no domain or certificate needed) |
-| User-assigned identity (AcrPull) | EC2 instance role (ECR pull, logs; attach more for P2) |
+| User-assigned identity (AcrPull) | EC2 instance role (ECR pull, logs; P2: read `gold/`) |
+| P2: Data Factory + Logic App + Blob Storage | Glue Python shell job + Lambda + EventBridge + one S3 bucket |
 | Two-stage create (`CREATE_WEB_APPS`) | Not needed: the environment starts with a sample app |
 
 **Cost** (eu-central-1, 24/7): ≈ USD 0.45/day, ≈ 13/month (t3.micro 8.80, Elastic IP 3.65, 8 GB disk 0.75; ECR, CloudWatch, CloudFront and S3 are cents). USD 100 of credits lasts longer than the 6-month Free plan. See [credits and limits](docs/aws-account-setup.md#3-credits-and-the-6-month-limit).
@@ -61,14 +62,16 @@ The instance also answers on `http://<cname>.elasticbeanstalk.com` (Elastic Bean
 ```text
 terraform/
 ├── bootstrap/            GitHub OIDC + IAM roles (applied locally by bootstrap.sh only)
-├── environments/dev/     root module: network, registry, CDN, Elastic Beanstalk
+├── environments/dev/     root module: network, registry, CDN, Elastic Beanstalk, P2 pipeline
 │   └── tests/            offline `terraform test` (mocked provider)
 └── modules/
     ├── naming/           all names and tags (used by both roots)
     ├── network/          VPC, 2 public subnets, internet gateway
     ├── container-registry/  ECR repositories + lifecycle policy
     ├── cdn/              CloudFront distribution (HTTPS, caching disabled)
-    └── beanstalk/        application, single-instance environment, IAM roles, bundle bucket
+    ├── beanstalk/        application, single-instance environment, IAM roles, bundle bucket
+    ├── storage/          P2: private S3 data bucket (bronze, silver, gold prefixes)
+    └── data-pipeline/    P2: Glue job + script, Lambda, EventBridge rules, IAM, Teams webhook parameter
 ```
 
 ## How deployments work
@@ -82,7 +85,7 @@ Terraform owns the environment settings, including the environment variables the
 | Repository | Variables |
 |---|---|
 | Apps | `AWS_REGION`, `AWS_DEPLOY_ROLE_ARN`, `ECR_REPOSITORY_PREFIX`, `EB_APPLICATION`, `EB_ENVIRONMENT`, `EB_BUNDLE_BUCKET`, `AWS_APP_URL` |
-| Infra | `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_INFRA_ROLE_ARN`, `TFSTATE_BUCKET`, `PROJECT_NAME`, `STUDENT_INITIALS`, `ENABLE_CDN` |
+| Infra | `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_INFRA_ROLE_ARN`, `TFSTATE_BUCKET`, `PROJECT_NAME`, `STUDENT_INITIALS`, `ENABLE_CDN` (P2 adds the secret `TEAMS_WEBHOOK_URL`, set by hand) |
 
 Azure and AWS can coexist in the Apps repo; each cloud deploys only if its variable exists (`AZURE_CLIENT_ID` / `AWS_DEPLOY_ROLE_ARN`).
 
@@ -104,4 +107,16 @@ Azure and AWS can coexist in the Apps repo; each cloud deploys only if its varia
 | Terraform: `account ... not allowed` | You are logged in to a different account than the one in `terraform.tfvars` |
 | `VPC quota reached` / `Elastic IP quota reached` | 5 per region by default; delete unused ones or request more |
 
-More: [docs/extending.md](docs/extending.md) (P2 data pipeline with S3/Glue, P3 sign-in with Cognito).
+## P2: data pipeline (S3, Glue, Lambda, Teams)
+
+Start with **[docs/p2-walkthrough.md](docs/p2-walkthrough.md)**. An upload to `s3://<bucket>/bronze/raw/*.csv` starts a Glue Python shell job (through EventBridge and one Lambda). The job writes clean Parquet to `silver/` (one folder per date) and JSON files to `gold/`. The same Lambda posts a Teams card (green SUCCEEDED, red FAILED).
+
+| Provided | You build |
+|---|---|
+| Terraform for bucket, Glue job, Lambda, rules, IAM, Teams card, backend read access to `gold/` | Gold files `energy_by_location.json` and `latest_readings.json` in `energy_etl.py` (Lab 2) |
+| Glue script: bronze to silver and `daily_energy_by_device.json` | Optional: a time-grouping gold file and a data-quality rule |
+| Dataset generator `scripts/generate_dataset.py`, `data/energy_sample.csv`, `data/energy_invalid.csv` | Charts and API in the Apps repo (`docs/p2-challenge.md` there) |
+
+The Teams webhook URL is a secret: GitHub secret `TEAMS_WEBHOOK_URL` (terraform workflow) and `teams_webhook_url` in the git-ignored `terraform.tfvars`. Empty = no cards. Cost: about USD 0.05–0.15 per Glue run.
+
+More: [docs/extending.md](docs/extending.md) (how P2 is built, P3 sign-in with Cognito).
