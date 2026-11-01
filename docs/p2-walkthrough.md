@@ -112,6 +112,32 @@ aws s3 cp data/energy_readings.csv "s3://$BUCKET/bronze/raw/energy_readings.csv"
 
 The upload starts the pipeline. Only `.csv` files under `bronze/raw/` count.
 
+### Know your bronze data
+
+Bronze is the raw file. Nobody cleaned it. It has the problems that real sensor data has. Find them before the pipeline removes them.
+
+| Problem | Rows | Example row |
+|---|---|---|
+| Empty `kwh` | 2,584 | `device-001,2025-11-04T03:15:00Z,20.34,54.31,,Office-A` |
+| Negative `kwh` | 1,043 | `device-001,2025-11-02T10:15:00Z,22.14,57.25,-0.0834,Office-A` |
+| Humidity above 100 % | 1,018 | `device-001,2025-11-01T06:50:00Z,20.9,140.0,0.0639,Office-A` |
+| Temperature `-999` (sensor error code) | 540 | `device-001,2025-11-02T19:30:00Z,-999.0,56.25,0.0619,Office-A` |
+| Exact duplicate rows | 2,110 | the same `device_id` and `timestamp` twice |
+
+The raw file has 532,895 rows. 7,295 of them are extra copies of real readings. Cleaning leaves 525,600 rows: 5 devices x 105,120 readings (one every 5 minutes for 365 days).
+
+Why this matters: one `-999` in a day of 288 readings moves the daily average temperature by about 3.5 degrees. A negative `kwh` lowers the daily total. Silver exists so that gold never sees these rows.
+
+Check it yourself (no pandas needed):
+
+```bash
+awk -F, 'NR>1 { if ($5=="") e++; else if ($5<0) n++; if ($4>100) h++; if ($3==-999) t++ }
+  END {print "empty kwh:", e, "| negative kwh:", n, "| humidity>100:", h, "| temperature -999:", t}' data/energy_readings.csv
+cut -d, -f1,2 data/energy_readings.csv | sort | uniq -d | wc -l     # keys that appear twice (7295)
+```
+
+The silver step does three things: it gives each column a type (`timestamp` as a real timestamp, numbers as `double`), it removes the bad rows above, and it keeps one row per `device_id` + `timestamp`.
+
 ## 5. Watch it run
 
 ```bash
