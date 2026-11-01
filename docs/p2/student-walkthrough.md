@@ -334,6 +334,6 @@ Open `docs/p2/challenge.md` in the Apps repository. The backend already has read
 | No Teams card | Check the log line `Teams notification failed` or `No Teams webhook configured` in the Lambda log. Check secret `TEAMS_WEBHOOK_URL` and that the terraform workflow ran after you set it. Check the flow's run history in Power Automate |
 | Teams card is raw JSON text | The flow must use the action **Post card in a chat or channel** with the card from the request |
 | `terraform apply` says `AccessDenied` for IAM | Run `./bootstrap/bootstrap.sh` again to refresh the roles |
-| Backend cannot read gold (later) | See the IMDS note in [extending.md](extending.md#how-p2-is-built-reference) |
+| Backend cannot read gold (later) | See the IMDS note in [extending.md](../extending.md#how-p2-is-built-reference) |
 
 Clean up: `./scripts/cleanup.sh` removes the pipeline too (the bucket is emptied automatically).

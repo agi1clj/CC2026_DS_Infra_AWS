@@ -1,6 +1,6 @@
 # Extending the platform (P3 and beyond)
 
-Later project parts **add** services without restructuring what already works. P2 (data pipeline) is implemented: see [p2-walkthrough.md](p2-walkthrough.md). P3 is not.
+Later project parts **add** services without restructuring what already works. P2 (data pipeline) is implemented: see [p2-walkthrough.md](p2/student-walkthrough.md). P3 is not.
 
 | Later part | Azure (course) | AWS equivalent |
 |---|---|---|

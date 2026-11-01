@@ -30,7 +30,7 @@ export AWS_PROFILE=cc2026                         # used by aws, terraform and b
 - The session lasts up to 12 hours. When a command says *session has expired*, run `aws login --profile cc2026` again.
 - End the session with `aws logout --profile cc2026`.
 
-Then continue with the [Quick start](../README.md#quick-start-about-10-minutes).
+Then continue with the [Quick start](../../README.md#quick-start-about-10-minutes).
 
 ## 3. Credits and the 6-month limit
 

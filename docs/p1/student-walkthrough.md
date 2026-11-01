@@ -93,4 +93,4 @@ Same as Azure: your two private repo links (with `agi1clj` as collaborator), the
 ./scripts/cleanup.sh
 ```
 
-Problems: README [Common errors](../README.md#common-errors). Most common: expired login → `aws login --profile cc2026`.
+Problems: README [Common errors](../../README.md#common-errors). Most common: expired login → `aws login --profile cc2026`.
