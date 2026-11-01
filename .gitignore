@@ -30,3 +30,6 @@ data/energy_readings.csv
 # Python caches
 __pycache__/
 *.pyc
+
+# P2: expected gold files made by scripts/generate_dataset.py --expected-gold data/expected-gold
+data/expected-gold/
