@@ -1,6 +1,6 @@
 # P2 — Student Walkthrough (AWS data pipeline)
 
-You upload a CSV with 525,600 energy readings. AWS cleans it and writes small JSON files. Teams tells you when it ends.
+You upload a CSV with 532,895 rows of energy readings (525,600 are valid). AWS cleans it and writes small JSON files. Teams tells you when it ends.
 
 **Time:** Lab 1 about 90 minutes (the pipeline). Lab 2 about 60 minutes (Teams, failing runs, study the pipeline). The Terraform apply takes 5-10 minutes (Beanstalk restarts). Each Glue run takes 3-4 minutes. Cost: about USD 0.05-0.15 per Glue run, so do not run the job in a loop.
 
