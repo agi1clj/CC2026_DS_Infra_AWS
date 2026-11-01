@@ -74,10 +74,15 @@ Init fails? Copy the names from the run summary (**Terraform outputs**).
 
 ```bash
 python3 scripts/generate_dataset.py --out data --expected-gold /tmp/expected-gold
-aws s3 cp data/energy_readings.csv "s3://$BUCKET/bronze/raw/energy_readings.csv"
 ```
 
-The script writes `data/energy_readings.csv` (32 MB, git-ignored) and the expected gold files for Lab 2. The upload starts the pipeline. Only `.csv` files under `bronze/raw/` count.
+It writes `data/energy_readings.csv` (32 MB, git-ignored) and the expected gold files for Lab 2. Upload the CSV in the S3 console:
+
+1. **S3** → your data bucket (name from step 2) → folder `bronze/`.
+2. **Create folder** `raw` (once). Open `raw/`.
+3. **Upload** → **Add files** → `energy_readings.csv` → **Upload**.
+
+The upload starts the pipeline. Only `.csv` files under `bronze/raw/` count. CLI alternative: `aws s3 cp data/energy_readings.csv "s3://$BUCKET/bronze/raw/energy_readings.csv"`
 
 ### Know your bronze data
 Bronze has the problems of real sensor data. The job moves the invalid rows to `silver/rejected/` (CSV with a `reject_reason` column). It removes duplicates and counts them.
@@ -92,27 +97,23 @@ Bronze has the problems of real sensor data. The job moves the invalid rows to `
 
 The raw file has 532,895 rows: 525,600 clean readings (5 devices x 105,120) plus 7,295 bad rows. The job fails (nothing is written) if more than 10 % of the rows are rejected (`--max-reject-ratio`).
 
-## 4. Watch it run
+## 4. Watch it run (console)
 
-```bash
-aws logs tail "/aws/lambda/$LAMBDA" --since 10m    # "Started <job> run jr_..."
-# Glue runs: RUNNING, then SUCCEEDED (2-4 minutes)
-aws glue get-job-runs --job-name "$JOB" --max-items 3 \
-  --query 'JobRuns[].[Id,JobRunState,ExecutionTime,ErrorMessage]' --output table
-```
+Observe only. Never edit the job, rules or Lambda in the console: the next Terraform run overwrites your change.
 
-## 5. Look at silver, rejected rows and gold
+1. **EventBridge → Rules**: open the rule `...-bronze-csv-created`. On **Monitoring**, `Invocations` is 1 (the S3 event matched).
+2. **Lambda → the `...-pipeline` function → Monitor → View CloudWatch logs**: the newest stream says `Started ... run jr_...`.
+3. **AWS Glue → ETL jobs → your job → Runs**: the status goes from Running to **Succeeded** (2-4 minutes). Open the run: **Run details** (duration) and **Output logs**. The log has the line `Run summary: {'rows_in': 532895, 'rows_silver': 525600, 'rows_rejected': 5185, ...}`.
 
-```bash
-aws s3 ls "s3://$BUCKET/silver/energy_readings/" | head          # one folder per day
-aws s3 ls "s3://$BUCKET/gold/by-timestamp/"                      # one folder per run (history)
-aws s3 ls "s3://$BUCKET/gold/latest/"                            # the files the backend reads
-aws s3 cp "s3://$BUCKET/gold/latest/daily_energy_by_device.json" - | head -n 20
-aws s3 cp "s3://$BUCKET/silver/_run_summary.json" -               # rows_in, rows_silver, rows_rejected
-aws s3 cp "s3://$BUCKET/silver/rejected/rejected_rows.csv" - | head -n 5
-```
+## 5. Look at silver, rejected rows and gold (console)
 
-Silver has 525,600 rows, 5,185 rows are in `silver/rejected/`, and 2,110 duplicates are gone. The green card shows these counts.
+In **S3** → your bucket, open:
+
+- `silver/energy_readings/`: one folder per day (`date=2025-11-01/`).
+- `silver/rejected/`: `rejected_rows.csv` (5,185 rows, column `reject_reason`). `silver/_run_summary.json` has the counts.
+- `gold/by-timestamp/`: one folder per run (history). `gold/latest/`: the files the backend reads.
+
+Silver has 525,600 rows, 5,185 rows are rejected, and 2,110 duplicates are gone. CLI alternative: `aws s3 ls "s3://$BUCKET/gold/latest/"`
 
 ## 6. Add Teams (optional)
 
@@ -140,13 +141,9 @@ gh secret set TEAMS_WEBHOOK_URL --repo <github-user>/CC2026_<LastName>_<FirstNam
 - The GitHub secret is required: the terraform workflow reads it.
 - `terraform/environments/dev/teams.auto.tfvars` (git-ignored, line `teams_webhook_url = "<URL>"`, made in an editor) is only for `terraform apply` on your own machine.
 - Never commit the URL. Never paste it in chat or in the README.
-- Run the terraform workflow again (step 2). Terraform stores the URL in SSM and the Lambda reads it. Then upload again:
+- Run the terraform workflow again (step 2). Terraform stores the URL in SSM and the Lambda reads it.
 
-```bash
-aws s3 cp data/energy_readings.csv "s3://$BUCKET/bronze/raw/energy_readings.csv"
-```
-
-Teams shows a green card **SUCCEEDED** with the row counts. This run also shows that the pipeline is **safe to repeat**:
+Upload `energy_readings.csv` again (console or CLI). Teams shows a green card **SUCCEEDED** with the row counts. This run also shows that the pipeline is **safe to repeat**:
 
 - Same file again: silver is overwritten, a new folder appears under `gold/by-timestamp/`, and `gold/latest/` is updated.
 - Upload while a run is active: you get a yellow card **SKIPPED**. Wait for the run to end, then upload again.
@@ -154,18 +151,12 @@ Teams shows a green card **SUCCEEDED** with the row counts. This run also shows 
 
 ## 7. Make runs fail on purpose
 
-Two files break the rules on purpose:
+Upload two files to `bronze/raw/` in the S3 console, one after the other (wait until the first run ends):
 
-```bash
-aws s3 cp data/energy_invalid.csv "s3://$BUCKET/bronze/raw/energy_invalid.csv"     # no kwh column
-# wait until the run ends, then:
-aws s3 cp data/energy_too_dirty.csv "s3://$BUCKET/bronze/raw/energy_too_dirty.csv" # half of the kwh values are empty
-```
+- `data/energy_invalid.csv` (no `kwh` column): error `Missing required columns: kwh`.
+- `data/energy_too_dirty.csv` (half of the `kwh` values are empty): more than 10 % rejected, error `Too many rejected rows`. The job stops before it writes anything.
 
-- `energy_invalid.csv`: error `Missing required columns: kwh`.
-- `energy_too_dirty.csv`: more than 10 % of the rows are rejected. The job raises `Too many rejected rows` before it writes anything.
-
-Both runs end as `FAILED` with a red card. Silver and `gold/latest/` keep the data of the last good run. Check with `aws s3 ls "s3://$BUCKET/gold/latest/"` (same time stamps as before).
+Find the failure: **AWS Glue → ETL jobs → your job → Runs**. The run shows **Failed**. Open it: **Error message** has the text above, **Error logs** has the Python traceback. Teams shows a red card. Silver and `gold/latest/` keep the data of the last good run (check the time stamps in S3).
 
 **Lab 1 is done when** you saw silver, `silver/rejected/` and gold files, the green card and both red cards.
 
