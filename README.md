@@ -49,7 +49,7 @@ flowchart LR
 | ACR Basic | ECR repositories `cc2026-<initials>-dev/backend`, `/frontend` |
 | App Service Plan B1 + 2 Web Apps | Elastic Beanstalk single-instance Docker environment (t3.micro) running both containers |
 | `*.azurewebsites.net` HTTPS | CloudFront `https://<id>.cloudfront.net` (no domain or certificate needed) |
-| User-assigned identity (AcrPull) | EC2 instance role (ECR pull, logs; P2: read `gold/`) |
+| User-assigned identity (AcrPull) | EC2 instance role (ECR pull, logs; P2: read `gold/latest/`) |
 | P2: Data Factory + Logic App + Blob Storage | Glue Python shell job + Lambda + EventBridge + one S3 bucket |
 | Two-stage create (`CREATE_WEB_APPS`) | Not needed: the environment starts with a sample app |
 
@@ -109,11 +109,11 @@ Azure and AWS can coexist in the Apps repo; each cloud deploys only if its varia
 
 ## P2: data pipeline (S3, Glue, Lambda, Teams)
 
-Start with **[docs/p2-walkthrough.md](docs/p2-walkthrough.md)**. An upload to `s3://<bucket>/bronze/raw/*.csv` starts a Glue Python shell job (through EventBridge and one Lambda). The job writes clean Parquet to `silver/` (one folder per date) and JSON files to `gold/`. The same Lambda posts a Teams card (green SUCCEEDED, red FAILED).
+Start with **[docs/p2-walkthrough.md](docs/p2-walkthrough.md)**. An upload to `s3://<bucket>/bronze/raw/*.csv` starts a Glue Python shell job (through EventBridge and one Lambda). The job writes clean Parquet to `silver/` (one folder per date) and JSON files to `gold/by-timestamp/<run time>/` (history) and `gold/latest/` (what the backend reads). The same Lambda posts a Teams card (green SUCCEEDED, red FAILED, yellow SKIPPED when a run is already active).
 
 | Provided | You build |
 |---|---|
-| Terraform for bucket, Glue job, Lambda, rules, IAM, Teams card, backend read access to `gold/` | Gold files `energy_by_location.json` and `latest_readings.json` in `energy_etl.py` (Lab 2) |
+| Terraform for bucket, Glue job, Lambda, rules, IAM, Teams card, backend read access to `gold/latest/` | Gold files `energy_by_location.json` and `latest_readings.json` in `energy_etl.py` (Lab 2) |
 | Glue script: bronze to silver and `daily_energy_by_device.json` | Optional: a time-grouping gold file and a data-quality rule |
 | Dataset generator `scripts/generate_dataset.py`, `data/energy_sample.csv`, `data/energy_invalid.csv` | Charts and API in the Apps repo (`docs/p2-challenge.md` there) |
 

@@ -23,14 +23,14 @@ flowchart LR
     eb1 --> l[Lambda]
     l -- start job --> g[Glue Python shell job]
     g --> s[(silver/ Parquet)]
-    g --> go[(gold/ JSON)]
+    g --> go[(gold/latest + gold/by-timestamp JSON)]
     g -- Job State Change --> eb2[EventBridge]
     eb2 --> l
     l -- Adaptive Card --> t[Teams channel]
     go -.-> be[Backend on Beanstalk]
 ```
 
-One bucket, three zones (prefixes): `bronze/` raw upload (never changed), `silver/` clean typed Parquet, `gold/` small JSON files for the backend. The backend reads gold only.
+One bucket, three zones (prefixes): `bronze/` raw upload (never changed), `silver/` clean typed Parquet, `gold/` small JSON files for the backend. Every run writes the gold files twice: to `gold/by-timestamp/<yyyyMMddTHHmmssZ>/` (history, never deleted) and to `gold/latest/` (overwritten, written last). The backend reads `gold/latest/` only.
 
 **Cost:** Glue costs about USD 0.05–0.15 per run. Lambda, EventBridge and S3 cost cents. Do not run the job in a loop.
 
@@ -160,13 +160,20 @@ Teams shows a green card **CC2026 P2 pipeline SUCCEEDED** with the file name, ru
 
 ```bash
 aws s3 ls "s3://$BUCKET/silver/energy_readings/" | head          # one folder per day: date=2025-11-01/ ...
-aws s3 ls "s3://$BUCKET/gold/"
-aws s3 cp "s3://$BUCKET/gold/daily_energy_by_device.json" - | head -n 20
+aws s3 ls "s3://$BUCKET/gold/by-timestamp/"                      # one folder per run (history)
+aws s3 ls "s3://$BUCKET/gold/latest/"                            # the files the backend reads
+aws s3 cp "s3://$BUCKET/gold/latest/daily_energy_by_device.json" - | head -n 20
 ```
 
 Silver has 525,600 clean rows (the raw file has 532,895). The job removed empty or negative `kwh`, humidity above 100, temperature `-999` and duplicates.
 
-## 7. Make it fail on purpose
+## 7. Safe to repeat
+
+- Upload the **same** file again: safe. Silver is overwritten, a new folder appears under `gold/by-timestamp/`, and `gold/latest/` is updated.
+- Upload while a run is active: you get a yellow card **SKIPPED: another run is active**. Wait for the run to end, then upload again.
+- Upload a **different or small** file (for example `data/energy_sample.csv`): silver and `gold/latest/` now hold that file's data. The history stays in `gold/by-timestamp/`. Upload the full `energy_readings.csv` again to restore.
+
+## 8. Make it fail on purpose
 
 `data/energy_invalid.csv` has no `kwh` column.
 
@@ -174,7 +181,7 @@ Silver has 525,600 clean rows (the raw file has 532,895). The job removed empty 
 aws s3 cp data/energy_invalid.csv "s3://$BUCKET/bronze/raw/energy_invalid.csv"
 ```
 
-The Glue run ends as `FAILED` (error `Missing required columns: kwh`). Teams shows a red card **CC2026 P2 pipeline FAILED**. Silver and gold keep the data of the last good run.
+The Glue run ends as `FAILED` (error `Missing required columns: kwh`). Teams shows a red card **CC2026 P2 pipeline FAILED**. Silver and `gold/latest/` keep the data of the last good run.
 
 **Lab 1 is done when** you saw silver files, the green card and the red card.
 
@@ -182,14 +189,14 @@ The Glue run ends as `FAILED` (error `Missing required columns: kwh`). Teams sho
 
 # Lab 2 — Your part: write two gold functions
 
-The Glue script is `terraform/modules/data-pipeline/glue/energy_etl.py`. Each gold file comes from one small function: it gets the clean silver table (a pandas DataFrame `df` with columns `device_id, timestamp, temperature, humidity, kwh, location, date`) and returns a list of records.
+The Glue script is `terraform/modules/data-pipeline/glue/energy_etl.py`. Each gold file comes from one small function: it gets the clean silver table (a pandas DataFrame `df` with columns `device_id, timestamp, temperature, humidity, kwh, location, date`) and returns a list of records. You do not write files: the script saves every returned list to `gold/by-timestamp/...` and `gold/latest/`.
 
 You write:
 
 | File | Records |
 |---|---|
-| `gold/energy_by_location.json` | 5 records: `{location, total_kwh, devices, avg_kwh_per_day}`. Sorted by `location`. |
-| `gold/latest_readings.json` | 200 records: `{device_id, timestamp, temperature, humidity, kwh, location}`. Newest first. |
+| `gold/latest/energy_by_location.json` | 5 records: `{location, total_kwh, devices, avg_kwh_per_day}`. Sorted by `location`. |
+| `gold/latest/latest_readings.json` | 200 records: `{device_id, timestamp, temperature, humidity, kwh, location}`. Newest first. |
 
 The expected output of the full dataset is in the Apps repo, folder `docs/p2-sample-data/gold/` (or `p2-raw-data/expected-gold/` from your instructor). Rounding: `total_kwh` 3 decimals, averages 2 decimals, `avg_kwh_per_day` 3 decimals.
 
@@ -273,8 +280,8 @@ You get a Teams card when it ends. A re-upload of the CSV does the same.
 ## Compare with the expected files
 
 ```bash
-aws s3 cp "s3://$BUCKET/gold/energy_by_location.json" /tmp/by_location.json
-aws s3 cp "s3://$BUCKET/gold/latest_readings.json" /tmp/latest.json
+aws s3 cp "s3://$BUCKET/gold/latest/energy_by_location.json" /tmp/by_location.json
+aws s3 cp "s3://$BUCKET/gold/latest/latest_readings.json" /tmp/latest.json
 python3 - <<'EOF'
 import json
 for mine, expected in [("/tmp/by_location.json", "energy_by_location.json"), ("/tmp/latest.json", "latest_readings.json")]:
@@ -296,14 +303,14 @@ Different? Check, in this order: the sort order, the rounding, the column names 
 
 ## Next: Apps challenge
 
-Open `docs/p2-challenge.md` in the Apps repository. The backend already has read access to `gold/` (variables `DATA_BUCKET` and `GOLD_PREFIX=gold/`). You add the API endpoints and the charts.
+Open `docs/p2-challenge.md` in the Apps repository. The backend already has read access to `gold/latest/` (variables `DATA_BUCKET` and `GOLD_PREFIX=gold/latest/`). You add the API endpoints and the charts.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
+| Yellow card SKIPPED | A run was still active (only one run at a time). Upload again after it ends |
 | Upload done, no Lambda log line | The file must be `bronze/raw/<name>.csv` (exact prefix, `.csv` end). Check `aws s3 ls "s3://$BUCKET/bronze/raw/"` |
-| Lambda log: `ConcurrentRunsExceededException` | A run is still active. Wait for it to end and upload again |
 | Glue run `FAILED`: `Missing required columns` | The CSV header is wrong. Use `data/energy_readings.csv` (header `device_id,timestamp,temperature,humidity,kwh,location`) |
 | Glue run `FAILED`: `ModuleNotFoundError` (pandas, pyarrow) | The job needs `library-set = analytics` (set in Terraform). Do not remove it |
 | Glue run `FAILED`: `AccessDenied` | Check you did not change the IAM policy of the Glue role; run the terraform workflow again |

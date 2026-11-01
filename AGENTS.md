@@ -24,7 +24,7 @@ Teaching project (UTCN Cloud Computing). AWS infra for the companion Apps reposi
 - IAM roles, instance profiles and policies created by `environments/dev` must be named `<project>-<initials>-<env>-*` (`module.naming.iam_role_prefix`); the Infra CI role can manage nothing else in IAM.
 - Never create or delete the account's GitHub OIDC provider by hand; `create_github_oidc_provider` is decided once by `bootstrap.sh`.
 - P2: the Teams webhook URL is the sensitive variable `teams_webhook_url` (GitHub secret `TEAMS_WEBHOOK_URL`); never commit it or put it in plain Lambda/Glue settings. Teams errors must never fail the pipeline. Never commit the 32 MB `data/energy_readings.csv`.
-- P2: Glue job and Lambda IAM roles use `iam_role_prefix` and least privilege (bronze read, silver/gold write). The Beanstalk instance role may read only `gold/`.
+- P2: Glue job and Lambda IAM roles use `iam_role_prefix` and least privilege (bronze read, silver/gold write). The Beanstalk instance role may read only `gold/latest/`. Gold runs write `gold/by-timestamp/<run time>/` (history, never deleted) first and `gold/latest/` last.
 - P2: the Glue script keeps its small-function layout (`clean`, `write_silver`, `gold_*`, `GOLD_OUTPUTS`). Students add gold functions there. Glue Python shell: Python 3.9, 1 DPU, `library-set=analytics`.
 - Commits follow Conventional Commits: `type(scope): summary` with type in feat, fix, docs, refactor, test, ci, build, chore.
 

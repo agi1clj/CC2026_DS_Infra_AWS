@@ -32,7 +32,7 @@ Later project parts **add** services without restructuring what already works. P
 | Bucket (private, encrypted, EventBridge on) | `terraform/modules/storage/` |
 | Glue job, script upload, Lambda, EventBridge rules, IAM, SSM parameter | `terraform/modules/data-pipeline/` (`glue/energy_etl.py`, `lambda/handler.py`) |
 | Names (`<name_base>-data-<account>`, `-energy-etl`, `-pipeline`, ...) | `terraform/modules/naming/outputs.tf` |
-| Backend read access to `gold/` and `DATA_BUCKET`, `GOLD_PREFIX=gold/` | `terraform/environments/dev/main.tf` |
+| Backend read access to `gold/latest/` and `DATA_BUCKET`, `GOLD_PREFIX=gold/latest/` | `terraform/environments/dev/main.tf` |
 
 Rules for the pipeline:
 
