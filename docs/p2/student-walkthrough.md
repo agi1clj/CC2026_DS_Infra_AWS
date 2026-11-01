@@ -144,7 +144,7 @@ gh secret set TEAMS_WEBHOOK_URL --repo <github-user>/CC2026_<LastName>_<FirstNam
 - Never commit the URL. Never paste it in chat or in the README.
 - Start a manual `terraform` run with **Apply** ticked (step 2). Terraform stores the URL in SSM and the Lambda reads it.
 
-Upload `energy_readings.csv` again (console or CLI). Teams shows a green card **SUCCEEDED** with the row counts. This run also shows that the pipeline is **safe to repeat**:
+Upload `energy_readings.csv` again (console or CLI). Teams shows a green card **CC2026 P2 pipeline SUCCEEDED (AWS)** with the pipeline name, file, run id and row counts. This run also shows that the pipeline is **safe to repeat**:
 
 - Same file again: silver is overwritten, a new folder appears under `gold/by-timestamp/`, and `gold/latest/` is updated.
 - Upload while a run is active: you get a yellow card **SKIPPED**. Wait for the run to end, then upload again.

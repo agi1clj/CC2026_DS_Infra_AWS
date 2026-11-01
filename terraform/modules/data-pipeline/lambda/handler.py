@@ -103,6 +103,8 @@ def build_card(status, file_name, run_id, message):
     color = {"SUCCEEDED": "Good", "SKIPPED": "Warning"}.get(status, "Attention")
     link = f"https://{REGION}.console.aws.amazon.com/gluestudio/home?region={REGION}#/job/{GLUE_JOB_NAME}/runs"
     facts = [
+        ("Cloud", "AWS"),
+        ("Pipeline", GLUE_JOB_NAME),
         ("File", file_name or "(unknown)"),
         ("Run id", run_id),
         ("Time (UTC)", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")),
@@ -120,7 +122,7 @@ def build_card(status, file_name, run_id, message):
                     "body": [
                         {
                             "type": "TextBlock",
-                            "text": f"CC2026 P2 pipeline {status}",
+                            "text": f"CC2026 P2 pipeline {status} (AWS)",
                             "weight": "Bolder",
                             "size": "Large",
                             "color": color,
