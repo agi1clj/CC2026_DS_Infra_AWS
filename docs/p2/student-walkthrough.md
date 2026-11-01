@@ -208,7 +208,15 @@ python3 -c "import json; print(json.load(open('/tmp/by_location.json')) == json.
 - The webhook URL is in an SSM SecureString and also in the Terraform state. We accept this limit.
 
 ## Next: Apps challenge
-Open `docs/p2/challenge.md` in the Apps repository. The backend can already read `gold/latest/` (`DATA_BUCKET`, `GOLD_PREFIX`). You add the endpoints and charts.
+Get the Apps code. The instructor gives you the PR number. In your Apps repo, on `main`:
+
+```bash
+git checkout main
+gh pr diff <PR-number> --repo agi1clj/CC2026_DS_Applications | git apply
+git add -A && git commit -m "feat(p2): add the challenge brief and sample data"
+```
+
+Then open `docs/p2/challenge.md`. The backend can already read `gold/latest/` (`DATA_BUCKET`, `GOLD_PREFIX`). You add the endpoints and charts.
 
 ## Troubleshooting
 
