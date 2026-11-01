@@ -110,13 +110,28 @@ Azure and AWS can coexist in the Apps repo; each cloud deploys only if its varia
 
 ## P2: data pipeline (S3, Glue, Lambda, Teams)
 
-Start with **[docs/p2/student-walkthrough.md](docs/p2/student-walkthrough.md)**. An upload to `s3://<bucket>/bronze/raw/*.csv` starts a Glue Python shell job (through EventBridge and one Lambda). The job writes clean Parquet to `silver/` (one folder per date) and JSON files to `gold/by-timestamp/<run time>/` (history) and `gold/latest/` (what the backend reads). The same Lambda posts a Teams card titled `CC2026 P2 pipeline SUCCEEDED (AWS)` when the job ends.
+Start with **[docs/p2/student-walkthrough.md](docs/p2/student-walkthrough.md)**. Upload a CSV to `bronze/raw/` of the data bucket. A Glue Python shell job cleans it and writes **silver** (Parquet per date, rejected rows in `silver/rejected/`, a run summary) and **gold** (JSON files in `gold/by-timestamp/<yyyyMMddTHHmmssZ>/` as history and in `gold/latest/`). One Lambda starts the job and posts the Teams card `CC2026 P2 pipeline SUCCEEDED (AWS)` when it ends.
+
+```mermaid
+flowchart LR
+    up[Upload CSV] --> b[(S3 bronze/raw)]
+    b -- Object Created --> eb1[EventBridge]
+    eb1 --> l[Lambda]
+    l -- start --> g[Glue job]
+    g --> s[(silver, silver/rejected)]
+    g --> h[(gold/by-timestamp)]
+    g --> lt[(gold/latest)]
+    g -- state change --> eb2[EventBridge]
+    eb2 --> l
+    l -- card --> t[Teams]
+    be[Backend, instance role] -- read --> lt
+```
 
 | Provided | You build |
 |---|---|
 | Terraform for bucket, Glue job, Lambda, rules, IAM, Teams card, backend read access to `gold/latest/` | Charts and API in the Apps repo (`docs/p2/challenge.md` there) |
-| Glue script: bronze to silver, `silver/rejected/`, three gold files (`daily_energy_by_device.json`, `energy_by_location.json`, `latest_readings.json`). Small test files in `data/` (the full CSV comes from the course channel) | Optional: a time-grouping gold function, a data-quality rule with a test |
+| Glue script: bronze to silver, `silver/rejected/`, three gold files (`daily_energy_by_device.json`, `energy_by_location.json`, `latest_readings.json`) | Optional: a time-grouping gold function, a data-quality rule with a test |
 
-The Teams webhook URL is a secret: GitHub secret `TEAMS_WEBHOOK_URL` (terraform workflow) and `teams_webhook_url` in the git-ignored `terraform/environments/dev/teams.auto.tfvars`. Empty = no cards. Cost: about USD 0.05–0.15 per Glue run.
+The full CSV comes from the course channel (save it as `data/energy_readings.csv`; `mkdir -p data` first; Git ignores it). The Teams webhook URL is a secret: GitHub secret `TEAMS_WEBHOOK_URL` (terraform workflow) and `teams_webhook_url` in the git-ignored `terraform/environments/dev/teams.auto.tfvars`. Empty = no cards. Cost: a Glue run costs cents.
 
 More: [docs/extending.md](docs/extending.md) (how P2 is built, P3 sign-in with Cognito).

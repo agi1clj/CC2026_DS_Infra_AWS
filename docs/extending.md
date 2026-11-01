@@ -1,6 +1,6 @@
 # Extending the platform (P3 and beyond)
 
-Later project parts **add** services without restructuring what already works. P2 (data pipeline) is implemented: see [p2-walkthrough.md](p2/student-walkthrough.md). P3 is not.
+Later project parts **add** services without restructuring what already works. P2 (data pipeline) is implemented: see [p2/student-walkthrough.md](p2/student-walkthrough.md). P3 is not.
 
 | Later part | Azure (course) | AWS equivalent |
 |---|---|---|
@@ -41,6 +41,7 @@ Rules for the pipeline:
 - The Teams URL is the sensitive variable `teams_webhook_url` (GitHub secret `TEAMS_WEBHOOK_URL`). Empty = no SSM parameter and no cards. Teams errors never fail the pipeline. The URL is stored in the Terraform state.
 - Python shell jobs run Python 3.9. The job pins pandas, pyarrow and numpy in `--additional-python-modules`; the pytest step in `terraform.yml` uses the same versions.
 - The bucket is versioned; a lifecycle rule expires old versions after 7 days.
+- The job raises an error before it writes anything when columns are missing, no valid row is left, or more than 10 % of the rows are rejected (`silver/` and `gold/latest/` stay unchanged).
 - Add a gold file: write a function in `energy_etl.py` and add it to `GOLD_OUTPUTS`.
 
 **IMDS note**: the instance requires IMDSv2 with a hop limit of 1, so containers on the Compose network cannot reach the instance role yet. Either run the backend with `network_mode: host` in `docker-compose.yml` (then the proxy must use `host.docker.internal:8000`), or add a platform hook in the bundle (`.platform/hooks/predeploy/`) that raises the hop limit: `aws ec2 modify-instance-metadata-options --instance-id <id> --http-put-response-hop-limit 2` (the instance role then needs `ec2:ModifyInstanceMetadataOptions` on itself). The backend (Apps repo) then uses `boto3.client("s3")` without credentials in code.
