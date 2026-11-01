@@ -1,6 +1,6 @@
 # P2 — Student Walkthrough (AWS data pipeline)
 
-You upload a CSV with 525,600 energy readings. AWS cleans it and writes small JSON files. Teams tells you when it ends. Time: about 2 hours, in two labs.
+You upload a CSV with 525,600 energy readings. AWS cleans it and writes small JSON files. Teams tells you when it ends (optional: the pipeline works without a webhook). Time: about 2 hours, in two labs.
 
 Replace `<github-user>`, `<LastName>_<FirstName>` and `<initials>` as in the [P1 walkthrough](../p1/student-walkthrough.md). Work in your Infra repo. Run `export AWS_PROFILE=cc2026` in every new terminal.
 
@@ -47,32 +47,7 @@ git push
 
 The P1 roles already cover P2. Run `bootstrap.sh` again only if the instructor says the roles changed.
 
-## 2. Create the Teams webhook
-
-A **webhook** is a URL that posts a message when you send JSON to it. The old "Incoming Webhook" connector is retired. Use a Teams **Workflow**.
-
-1. In Teams, open `...` next to a channel name (a private team of your own is fine). Pick **Workflows**.
-2. Choose the template **Send webhook alerts to a channel** (some tenants show it as **Post to a channel when a webhook request is received**). Name it `cc2026-pipeline`. Select team and channel. Click **Add workflow**.
-3. Copy the **webhook URL**. It is a secret: anyone with it can post to your channel.
-4. No template? In Power Automate, make a flow with the trigger **When a Teams webhook request is received** and the action **Post card in a chat or channel** (card: `body.attachments[0].content`).
-5. If the university tenant blocks Workflows, ask your instructor or use a personal Microsoft account. Without a webhook the pipeline works. You only miss the cards.
-
-Test the URL (expect HTTP `200` or `202` and a card within a minute):
-
-```bash
-export TEAMS_WEBHOOK_URL='<paste the URL>'
-curl -sS -o /dev/null -w '%{http_code}\n' -H 'Content-Type: application/json' \
-  -d '{"type":"message","attachments":[{"contentType":"application/vnd.microsoft.card.adaptive","content":{"type":"AdaptiveCard","version":"1.4","$schema":"http://adaptivecards.io/schemas/adaptive-card.json","body":[{"type":"TextBlock","text":"CC2026 webhook test"}]}}]}' \
-  "$TEAMS_WEBHOOK_URL"
-```
-
-Store the URL in two places:
-```bash
-gh secret set TEAMS_WEBHOOK_URL --repo <github-user>/CC2026_<LastName>_<FirstName>_Infra_AWS   # paste when asked
-echo 'teams_webhook_url = "<paste the URL>"' > terraform/environments/dev/teams.auto.tfvars   # git-ignored
-```
-
-## 3. Deploy
+## 2. Deploy
 
 Run the workflow: GitHub **Actions → terraform → Run workflow** (branch `main`, **Apply** checked). Or:
 
@@ -95,7 +70,7 @@ echo "$BUCKET $JOB $LAMBDA"
 
 Init fails? Copy the names from the run summary (**Terraform outputs**).
 
-## 4. Generate the data and upload it
+## 3. Generate the data and upload it
 
 ```bash
 python3 scripts/generate_dataset.py --out data --expected-gold /tmp/expected-gold
@@ -105,7 +80,6 @@ aws s3 cp data/energy_readings.csv "s3://$BUCKET/bronze/raw/energy_readings.csv"
 The script writes `data/energy_readings.csv` (32 MB, git-ignored) and the expected gold files for Lab 2. The upload starts the pipeline. Only `.csv` files under `bronze/raw/` count.
 
 ### Know your bronze data
-
 Bronze has the problems of real sensor data. The job moves the invalid rows to `silver/rejected/` (CSV with a `reject_reason` column). It removes duplicates and counts them.
 
 | Problem (`reject_reason`) | Rows | Example row |
@@ -118,51 +92,81 @@ Bronze has the problems of real sensor data. The job moves the invalid rows to `
 
 The raw file has 532,895 rows: 525,600 clean readings (5 devices x 105,120) plus 7,295 bad rows. The job fails (nothing is written) if more than 10 % of the rows are rejected (`--max-reject-ratio`).
 
-## 5. Watch it run
+## 4. Watch it run
 
 ```bash
 aws logs tail "/aws/lambda/$LAMBDA" --since 10m    # "Started <job> run jr_..."
-
 # Glue runs: RUNNING, then SUCCEEDED (2-4 minutes)
 aws glue get-job-runs --job-name "$JOB" --max-items 3 \
   --query 'JobRuns[].[Id,JobRunState,ExecutionTime,ErrorMessage]' --output table
 ```
 
-Teams shows a green card **SUCCEEDED**.
-
-## 6. Look at silver and gold
+## 5. Look at silver, rejected rows and gold
 
 ```bash
 aws s3 ls "s3://$BUCKET/silver/energy_readings/" | head          # one folder per day
 aws s3 ls "s3://$BUCKET/gold/by-timestamp/"                      # one folder per run (history)
 aws s3 ls "s3://$BUCKET/gold/latest/"                            # the files the backend reads
 aws s3 cp "s3://$BUCKET/gold/latest/daily_energy_by_device.json" - | head -n 20
-```
-
-```bash
 aws s3 cp "s3://$BUCKET/silver/_run_summary.json" -               # rows_in, rows_silver, rows_rejected
 aws s3 cp "s3://$BUCKET/silver/rejected/rejected_rows.csv" - | head -n 5
 ```
 
 Silver has 525,600 rows, 5,185 rows are in `silver/rejected/`, and 2,110 duplicates are gone. The green card shows these counts.
 
-## 7. Safe to repeat
+## 6. Add Teams (optional)
 
-- Upload the **same** file again: safe. Silver is overwritten, a new folder appears under `gold/by-timestamp/`, and `gold/latest/` is updated.
-- Upload while a run is active: you get a yellow card **SKIPPED: another run is active**. Wait for the run to end, then upload again.
-- Upload a **different or small** file (for example `data/energy_sample.csv`): silver and `gold/latest/` now hold that file's data. History stays in `gold/by-timestamp/`. Upload `energy_readings.csv` again to restore.
+A **webhook** is a URL that posts a message when you send JSON to it. The old "Incoming Webhook" connector is retired. Use a Teams **Workflow**.
 
-## 8. Make it fail on purpose
+1. In Teams, use a standard channel in a team you own, for example General (no team? **Join or create a team**). Private channels may not work with Workflows. Open `...` next to the channel name and pick **Workflows**.
+2. Choose the template **Send webhook alerts to a channel**. Name it `cc2026-pipeline`. Select team and channel. Click **Add workflow**.
+3. Copy the **webhook URL**. It is a secret: anyone with it can post to your channel.
+4. No template? In Power Automate, use the trigger **When a Teams webhook request is received** and the action **Post card in a chat or channel**.
+5. If the university tenant blocks Workflows, ask your instructor or use a personal Microsoft account. Without a webhook the pipeline works. You only miss the cards.
 
-`data/energy_invalid.csv` has no `kwh` column.
+Test the URL (expect HTTP `200` or `202` and a card within a minute):
 
 ```bash
-aws s3 cp data/energy_invalid.csv "s3://$BUCKET/bronze/raw/energy_invalid.csv"
+export TEAMS_WEBHOOK_URL='<paste the URL>'
+curl -sS -o /dev/null -w '%{http_code}\n' -H 'Content-Type: application/json' \
+  -d '{"type":"message","attachments":[{"contentType":"application/vnd.microsoft.card.adaptive","content":{"type":"AdaptiveCard","version":"1.4","$schema":"http://adaptivecards.io/schemas/adaptive-card.json","body":[{"type":"TextBlock","text":"CC2026 webhook test"}]}}]}' \
+  "$TEAMS_WEBHOOK_URL"
 ```
 
-The Glue run ends as `FAILED` (error `Missing required columns: kwh`, nothing written). Teams shows a red card **CC2026 P2 pipeline FAILED**. Silver and `gold/latest/` keep the data of the last good run.
+Store the URL in two places:
+```bash
+gh secret set TEAMS_WEBHOOK_URL --repo <github-user>/CC2026_<LastName>_<FirstName>_Infra_AWS   # paste when asked
+echo 'teams_webhook_url = "<paste the URL>"' > terraform/environments/dev/teams.auto.tfvars   # git-ignored
+```
 
-**Lab 1 is done when** you saw silver files, the green card and the red card.
+Deploy again and repeat the upload. Run the terraform workflow (as in step 2), then:
+
+```bash
+aws s3 cp data/energy_readings.csv "s3://$BUCKET/bronze/raw/energy_readings.csv"
+```
+
+Teams shows a green card **SUCCEEDED** with the row counts. This run also shows that the pipeline is **safe to repeat**:
+
+- Same file again: silver is overwritten, a new folder appears under `gold/by-timestamp/`, and `gold/latest/` is updated.
+- Upload while a run is active: you get a yellow card **SKIPPED**. Wait for the run to end, then upload again.
+- A different or small file (for example `data/energy_sample.csv`) replaces silver and `gold/latest/` with its data. History stays in `gold/by-timestamp/`. Upload `energy_readings.csv` again to restore.
+
+## 7. Make runs fail on purpose
+
+Two files break the rules on purpose:
+
+```bash
+aws s3 cp data/energy_invalid.csv "s3://$BUCKET/bronze/raw/energy_invalid.csv"     # no kwh column
+# wait until the run ends, then:
+aws s3 cp data/energy_too_dirty.csv "s3://$BUCKET/bronze/raw/energy_too_dirty.csv" # half of the kwh values are empty
+```
+
+- `energy_invalid.csv`: error `Missing required columns: kwh`.
+- `energy_too_dirty.csv`: more than 10 % of the rows are rejected. The job raises `Too many rejected rows` before it writes anything.
+
+Both runs end as `FAILED` with a red card. Silver and `gold/latest/` keep the data of the last good run. Check with `aws s3 ls "s3://$BUCKET/gold/latest/"` (same time stamps as before).
+
+**Lab 1 is done when** you saw silver, `silver/rejected/` and gold files, the green card and both red cards.
 
 ---
 
@@ -262,6 +266,8 @@ for mine, expected in [("/tmp/by_location.json", "energy_by_location.json"), ("/
 EOF
 ```
 
+The provided daily file may differ from the expected one in 10 of 1825 rows by 0.01 (rounding ties). Ignore that. Your two files must match.
+
 Different? Check in this order: sort order, rounding, column names and order, unrounded total for `avg_kwh_per_day`. Job failed? Read `/aws-glue/python-jobs/error`.
 
 **Lab 2 is done when** both files print `OK`.
@@ -274,27 +280,21 @@ Different? Check in this order: sort order, rounding, column names and order, un
 ---
 
 ## Limits
-
-- Every upload refreshes everything. Production pipelines append or merge (for example Delta or Iceberg).
-- Glue Python shell is the cheap choice for 32 MB. It is a teaching choice, not the only one.
-- Python shell runs Python 3.9 only (3.6 support ended on 1 March 2026).
+- Every upload refreshes everything. Production pipelines append or merge (Delta, Iceberg).
+- Glue Python shell is a cheap teaching choice for 32 MB. It runs Python 3.9 only (3.6 support ended on 1 March 2026).
 - The webhook URL is in an SSM SecureString and also in the Terraform state. We accept this limit.
 
 ## Next: Apps challenge
 
-Open `docs/p2/challenge.md` in the Apps repository. The backend can already read `gold/latest/` (variables `DATA_BUCKET` and `GOLD_PREFIX=gold/latest/`). You add the API endpoints and the charts.
+Open `docs/p2/challenge.md` in the Apps repository. The backend can already read `gold/latest/` (`DATA_BUCKET`, `GOLD_PREFIX`). You add the endpoints and charts. IMDS problems: see [extending.md](../extending.md#how-p2-is-built-reference).
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| Yellow card SKIPPED | A run was active (one at a time). Upload again after it ends |
 | No Lambda log line after upload | Use exact key `bronze/raw/<name>.csv`. Check `aws s3 ls "s3://$BUCKET/bronze/raw/"` |
-| `FAILED`: `Missing required columns` | Wrong CSV header. Use `data/energy_readings.csv` |
 | `FAILED` with a Python error after your edit | `aws logs tail /aws-glue/python-jobs/error --log-stream-name-prefix <run-id>` |
 | Edit not used by the job | Run the terraform workflow after the push. It uploads the script |
-| `FAILED`: `Too many rejected rows` | The file has more than 10 % invalid rows. Check the CSV |
 | No Teams card | Search the Lambda log for `Teams notification failed` or `No Teams webhook configured`. Check secret `TEAMS_WEBHOOK_URL` and rerun the workflow. Check the flow run history in Power Automate |
-| Backend cannot read gold (later) | See the IMDS note in [extending.md](../extending.md#how-p2-is-built-reference) |
 
 Clean up: `./scripts/cleanup.sh` removes the pipeline too. It empties the bucket first.
