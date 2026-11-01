@@ -6,9 +6,9 @@ Replace `<github-user>`, `<LastName>_<FirstName>` and `<initials>` as in the [P1
 
 ## Provided and you build
 
-- **Provided:** S3 bucket, Glue job, Lambda, EventBridge rules, IAM, Teams card, backend read access (Terraform). The Glue script for bronze to silver and the gold file `daily_energy_by_device.json`.
-- **You build (Lab 2):** gold files `energy_by_location.json` and `latest_readings.json`, then the charts and API in the Apps repo.
-- **Optional bonus:** one time-grouping gold file, one extra data-quality rule.
+- **Provided:** S3 bucket, Glue job, Lambda, EventBridge rules, IAM, Teams card, backend read access (Terraform). The Glue script for bronze to silver (with `silver/rejected/`) and the gold files `daily_energy_by_device.json` and `latest_readings.json`.
+- **You build (Lab 2):** one function, `gold_by_location` (`energy_by_location.json`). Then the charts and API in the Apps repo.
+- **Optional bonus:** see the end.
 
 ## How it works
 
@@ -162,16 +162,11 @@ Find the failure: **AWS Glue → ETL jobs → your job → Runs**. The run shows
 
 ---
 
-# Lab 2 — Your part: write two gold functions
+# Lab 2 — Your part: write one gold function
 
 Open `terraform/modules/data-pipeline/glue/energy_etl.py`. Each gold file comes from one function. It gets the silver table, a pandas DataFrame `df` with columns `device_id, timestamp, temperature, humidity, kwh, location, date`. It returns a list of records (dicts). The script writes the files for you.
 
-| File | Records |
-|---|---|
-| `gold/latest/energy_by_location.json` | 5 records: `{location, total_kwh, devices, avg_kwh_per_day}`. Sorted by `location`. |
-| `gold/latest/latest_readings.json` | 200 records: `{device_id, timestamp, temperature, humidity, kwh, location}`. Newest first. |
-
-Rounding: `total_kwh` 3 decimals, averages 2 decimals, `avg_kwh_per_day` 3 decimals. Use `.round(decimals)`. The expected files are in `/tmp/expected-gold/` (made in step 4).
+Provided: `gold_daily_by_device` (aggregate) and `gold_latest_readings` (sort and take 200). **You write `gold_by_location`** for `energy_by_location.json`: 5 records `{location, total_kwh, devices, avg_kwh_per_day}`, sorted by `location`. `total_kwh` has 3 decimals, `avg_kwh_per_day` (total kWh / number of days) has 3 decimals.
 
 ## The finished example, line by line
 
@@ -193,9 +188,9 @@ def gold_daily_by_device(df):
     return daily.to_dict("records")                    # list of dicts = JSON array
 ```
 
-## Your function 1: `gold_by_location`
+## Your function: `gold_by_location`
 
-Copy the pattern. Fill the `TODO` gaps:
+Fill the `TODO` gaps:
 
 ```python
 def gold_by_location(df):
@@ -204,69 +199,41 @@ def gold_by_location(df):
         .agg(
             total_kwh=("kwh", "sum"),
             devices=("device_id", "TODO: count distinct values"),   # hint: nunique
-            days=("date", "TODO: count distinct values"),
+            days=("date", "nunique"),
         )
         .sort_values("location")
     )
     # avg_kwh_per_day = UNROUNDED total / days
-    by_location["avg_kwh_per_day"] = (by_location["TODO"] / by_location["days"]).round(3)
-    by_location["total_kwh"] = by_location["total_kwh"].round(3)
+    by_location["avg_kwh_per_day"] = (by_location["total_kwh"] / by_location["days"]).round(TODO)
+    by_location["total_kwh"] = by_location["total_kwh"].round(TODO)
     return by_location[["location", "total_kwh", "devices", "avg_kwh_per_day"]].to_dict("records")
 ```
 
-## Your function 2: `gold_latest_readings`
+## Register, deploy and run
 
-Write it yourself: sort with `df.sort_values(["timestamp", "device_id"], ascending=False)`, then `.head(200).copy()`. Turn `timestamp` back into text with `.dt.strftime("%Y-%m-%dT%H:%M:%SZ")`. Keep only `REQUIRED_COLUMNS` and return `.to_dict("records")`.
-
-## Register and deploy
-
-In `GOLD_OUTPUTS`, remove the `#` and the `TODO` comment from your two lines.
-
-Push to `main` and deploy (the workflow uploads the new script):
+In `GOLD_OUTPUTS`, remove the `#` and the `TODO` comment from your line. Then push and deploy (the workflow uploads the new script):
 
 ```bash
-git add -A && git commit -m "feat(p2): gold by location and latest readings" && git push
+git add -A && git commit -m "feat(p2): gold by location" && git push
 gh workflow run terraform --repo <github-user>/CC2026_<LastName>_<FirstName>_Infra_AWS
 gh run watch --repo <github-user>/CC2026_<LastName>_<FirstName>_Infra_AWS
 ```
 
-Run the job again on the data already in S3:
+Run the job again on the data in S3: **AWS Glue → ETL jobs → your job → Run**, with job parameters `--bucket` (your bucket) and `--key` (`bronze/raw/energy_readings.csv`). Or upload `energy_readings.csv` again.
 
-```bash
-aws glue start-job-run --job-name "$JOB" \
-  --arguments "{\"--bucket\":\"$BUCKET\",\"--key\":\"bronze/raw/energy_readings.csv\"}"
-```
+## Check your result
 
-## Compare with the expected files
+1. **S3** → `gold/latest/` → `energy_by_location.json` → **Open** (or **Download**). The file has 5 records.
+2. Compare with the expected file (`/tmp/expected-gold/energy_by_location.json`, made in step 3; it is also in `p2-raw-data/expected-gold/`). The 5 rows must match exactly:
 
 ```bash
 aws s3 cp "s3://$BUCKET/gold/latest/energy_by_location.json" /tmp/by_location.json
-aws s3 cp "s3://$BUCKET/gold/latest/latest_readings.json" /tmp/latest.json
-python3 - <<'EOF'
-import json
-
-def same(a, b):  # numbers may differ by 0.001
-    if isinstance(a, dict):
-        return a.keys() == b.keys() and all(same(a[k], b[k]) for k in a)
-    if isinstance(a, list):
-        return len(a) == len(b) and all(map(same, a, b))
-    return abs(a - b) <= 0.0011 if isinstance(a, float) else a == b
-
-for mine, expected in [("/tmp/by_location.json", "energy_by_location.json"), ("/tmp/latest.json", "latest_readings.json")]:
-    ok = same(json.load(open(mine)), json.load(open("/tmp/expected-gold/" + expected)))
-    print(expected, "OK" if ok else "DIFFERENT")
-EOF
+python3 -c "import json; print(json.load(open('/tmp/by_location.json')) == json.load(open('/tmp/expected-gold/energy_by_location.json')))"
 ```
 
-The provided daily file may differ from the expected one in 10 of 1825 rows by 0.01 (rounding ties). Ignore that. Your two files must match.
+`True` = done. `False`? Check the sort order, the column names and order, the rounding, and that `avg_kwh_per_day` uses the unrounded total. The Glue run failed? Open it (**Runs → Error logs**).
 
-Different? Check in this order: sort order, rounding, column names and order, unrounded total for `avg_kwh_per_day`. Job failed? Read `/aws-glue/python-jobs/error`.
-
-**Lab 2 is done when** both files print `OK`.
-
-## Optional bonus
-1. **Time grouping:** a gold file such as `energy_by_hour.json` (`df["timestamp"].dt.hour`, `dt.dayofweek` or `df["date"].str[:7]`). Register it.
-2. **Data-quality rule** in `clean()`, for example reject `kwh` above 5. Upload a small CSV with bad rows and check `silver/rejected/`.
+**Lab 2 is done when** the output is `True`.
 
 ---
 
@@ -288,3 +255,7 @@ Open `docs/p2/challenge.md` in the Apps repository. The backend can already read
 | No Teams card | Search the Lambda log for `Teams notification failed` or `No Teams webhook configured`. Check secret `TEAMS_WEBHOOK_URL` and rerun the workflow. Check the flow run history in Power Automate |
 
 Clean up: `./scripts/cleanup.sh` removes the pipeline too. It empties the bucket first.
+
+## Bonus (optional)
+- A time-grouping gold file, for example `energy_by_hour.json` (`df["timestamp"].dt.hour`, `dt.dayofweek` or `df["date"].str[:7]`). Register it in `GOLD_OUTPUTS`.
+- One extra data-quality rule in `clean()`, for example reject `kwh` above 5. Upload a small CSV with bad rows and check `silver/rejected/`.

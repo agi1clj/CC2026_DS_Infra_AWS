@@ -113,8 +113,8 @@ Start with **[docs/p2/student-walkthrough.md](docs/p2/student-walkthrough.md)**.
 
 | Provided | You build |
 |---|---|
-| Terraform for bucket, Glue job, Lambda, rules, IAM, Teams card, backend read access to `gold/latest/` | Gold files `energy_by_location.json` and `latest_readings.json` in `energy_etl.py` (Lab 2) |
-| Glue script: bronze to silver and `daily_energy_by_device.json` | Optional: a time-grouping gold file and a data-quality rule |
+| Terraform for bucket, Glue job, Lambda, rules, IAM, Teams card, backend read access to `gold/latest/` | The function `gold_by_location` (`energy_by_location.json`) in `energy_etl.py` (Lab 2) |
+| Glue script: bronze to silver, `silver/rejected/`, gold `daily_energy_by_device.json` and `latest_readings.json` | Optional: a time-grouping gold file and a data-quality rule |
 | Dataset generator `scripts/generate_dataset.py`, `data/energy_sample.csv`, `data/energy_invalid.csv` | Charts and API in the Apps repo (`docs/p2/challenge.md` there) |
 
 The Teams webhook URL is a secret: GitHub secret `TEAMS_WEBHOOK_URL` (terraform workflow) and `teams_webhook_url` in the git-ignored `terraform/environments/dev/teams.auto.tfvars`. Empty = no cards. Cost: about USD 0.05–0.15 per Glue run.

@@ -1,7 +1,7 @@
 """CC2026 P2 - energy ETL (AWS Glue Python shell job).
 
 bronze (raw CSV) -> silver (clean Parquet, one folder per date) -> gold (JSON files).
-Provided: bronze -> silver and one gold file. Students add the other gold files.
+Provided: bronze -> silver and two gold files. Students add gold_by_location.
 
 Arguments:
   --bucket            data bucket name
@@ -111,19 +111,24 @@ def gold_daily_by_device(df):
 
 
 # ----- YOUR PART (see docs/p2/student-walkthrough.md) -----------------------------------
-# Add one function per new gold file, in the same pattern as gold_daily_by_device:
-#   def gold_by_location(df):      # energy_by_location.json: location, total_kwh, devices, avg_kwh_per_day
-#   def gold_latest_readings(df):  # latest_readings.json: the 200 newest readings, newest first
-# Then register each function in GOLD_OUTPUTS below.
-# Bonus: a gold file with a time grouping (hour of day, weekday or month).
+# Write gold_by_location(df) here, in the same pattern as gold_daily_by_device:
+#   energy_by_location.json: location, total_kwh, devices, avg_kwh_per_day
+# Then remove the # in GOLD_OUTPUTS below.
 # ----------------------------------------------------------------------------------------
+
+
+def gold_latest_readings(df):
+    """The 200 most recent readings, newest first."""
+    latest = df.sort_values(["timestamp", "device_id"], ascending=False).head(200).copy()
+    latest["timestamp"] = latest["timestamp"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return latest[REQUIRED_COLUMNS].to_dict("records")
 
 
 # The gold files this job writes: file name -> function.
 GOLD_OUTPUTS = {
     "daily_energy_by_device.json": gold_daily_by_device,
     # "energy_by_location.json": gold_by_location,        # TODO: you write this function
-    # "latest_readings.json": gold_latest_readings,       # TODO: you write this function
+    "latest_readings.json": gold_latest_readings,
 }
 
 
