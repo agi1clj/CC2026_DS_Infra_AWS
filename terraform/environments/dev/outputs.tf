@@ -18,6 +18,11 @@ output "cloudfront_distribution_id" {
   value       = one(module.cdn[*].distribution_id)
 }
 
+output "data_bucket_name" {
+  description = "S3 data bucket of the P2 pipeline (bronze/, silver/, gold/ prefixes)."
+  value       = module.storage.name
+}
+
 output "eb_application_name" {
   description = "Elastic Beanstalk application (GitHub variable EB_APPLICATION)."
   value       = module.beanstalk.application_name
@@ -41,4 +46,19 @@ output "ecr_repository_urls" {
 output "instance_role_name" {
   description = "IAM role of the EC2 instance; attach policies to it for new resources."
   value       = module.beanstalk.instance_role_name
+}
+
+output "glue_job_name" {
+  description = "Glue job that cleans the raw CSV (console: AWS Glue, ETL jobs)."
+  value       = module.data_pipeline.glue_job_name
+}
+
+output "pipeline_lambda_name" {
+  description = "Lambda that starts the Glue job and posts to Teams (logs: /aws/lambda/<name>)."
+  value       = module.data_pipeline.lambda_function_name
+}
+
+output "upload_command" {
+  description = "Command that uploads the raw data and starts the pipeline."
+  value       = "aws s3 cp data/energy_readings.csv s3://${module.storage.name}/bronze/raw/energy_readings.csv"
 }

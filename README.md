@@ -3,11 +3,12 @@
 Terraform, bootstrap and CI/CD for the *Cloud Computing* project (UTCN, 2026–2027) on **AWS**. It is the AWS counterpart of [`CC2026_DS_Infra`](https://github.com/agi1clj/CC2026_DS_Infra) (Azure) and runs the same, unchanged applications from [`CC2026_DS_Applications`](https://github.com/agi1clj/CC2026_DS_Applications).
 
 > Students: name your copy `CC2026_LastName_FirstName_Infra_AWS`. This reference copy is called `CC2026_DS_Infra_AWS`.
-> **Start with [docs/student-walkthrough.md](docs/student-walkthrough.md)**.
+> **Start with [docs/p1/student-walkthrough.md](docs/p1/student-walkthrough.md)**.
+> **Part 2 (data pipeline): start with [docs/p2/student-walkthrough.md](docs/p2/student-walkthrough.md)**. Part 1 must be deployed first.
 
 ## Quick start (about 15 minutes)
 
-Tools: `aws` ≥ 2.32, `gh`, `terraform` ≥ 1.14, `git`, `jq`. New to AWS / free account: first follow **[docs/aws-account-setup.md](docs/aws-account-setup.md)** (account, IAM user, `aws login`, credits).
+Tools: `aws` ≥ 2.32, `gh`, `terraform` ≥ 1.14, `git`, `jq`. New to AWS / free account: first follow **[docs/p1/aws-account-setup.md](docs/p1/aws-account-setup.md)** (account, IAM user, `aws login`, credits).
 
 ```bash
 aws login --profile cc2026 --region eu-central-1   # free/personal account (IAM user)
@@ -49,10 +50,11 @@ flowchart LR
 | ACR Basic | ECR repositories `cc2026-<initials>-dev/backend`, `/frontend` |
 | App Service Plan B1 + 2 Web Apps | Elastic Beanstalk single-instance Docker environment (t3.micro) running both containers |
 | `*.azurewebsites.net` HTTPS | CloudFront `https://<id>.cloudfront.net` (no domain or certificate needed) |
-| User-assigned identity (AcrPull) | EC2 instance role (ECR pull, logs; attach more for P2) |
+| User-assigned identity (AcrPull) | EC2 instance role (ECR pull, logs; P2: read `gold/latest/`) |
+| P2: Data Factory + Logic App + Blob Storage | Glue Python shell job + Lambda + EventBridge + one S3 bucket |
 | Two-stage create (`CREATE_WEB_APPS`) | Not needed: the environment starts with a sample app |
 
-**Cost** (eu-central-1, 24/7): ≈ USD 0.45/day, ≈ 13/month (t3.micro 8.80, Elastic IP 3.65, 8 GB disk 0.75; ECR, CloudWatch, CloudFront and S3 are cents). USD 100 of credits lasts longer than the 6-month Free plan. See [credits and limits](docs/aws-account-setup.md#3-credits-and-the-6-month-limit).
+**Cost** (eu-central-1, 24/7): ≈ USD 0.45/day, ≈ 13/month (t3.micro 8.80, Elastic IP 3.65, 8 GB disk 0.75; ECR, CloudWatch, CloudFront and S3 are cents). USD 100 of credits lasts longer than the 6-month Free plan. See [credits and limits](docs/p1/aws-account-setup.md#3-credits-and-the-6-month-limit).
 
 The instance also answers on `http://<cname>.elasticbeanstalk.com` (Elastic Beanstalk opens port 80 for single-instance environments). CloudFront adds HTTPS; it is not an access control.
 
@@ -61,14 +63,16 @@ The instance also answers on `http://<cname>.elasticbeanstalk.com` (Elastic Bean
 ```text
 terraform/
 ├── bootstrap/            GitHub OIDC + IAM roles (applied locally by bootstrap.sh only)
-├── environments/dev/     root module: network, registry, CDN, Elastic Beanstalk
+├── environments/dev/     root module: network, registry, CDN, Elastic Beanstalk, P2 pipeline
 │   └── tests/            offline `terraform test` (mocked provider)
 └── modules/
     ├── naming/           all names and tags (used by both roots)
     ├── network/          VPC, 2 public subnets, internet gateway
     ├── container-registry/  ECR repositories + lifecycle policy
     ├── cdn/              CloudFront distribution (HTTPS, caching disabled)
-    └── beanstalk/        application, single-instance environment, IAM roles, bundle bucket
+    ├── beanstalk/        application, single-instance environment, IAM roles, bundle bucket
+    ├── storage/          P2: private S3 data bucket (bronze, silver, gold prefixes)
+    └── data-pipeline/    P2: Glue job + script, Lambda, EventBridge rules, IAM, Teams webhook parameter
 ```
 
 ## How deployments work
@@ -82,7 +86,7 @@ Terraform owns the environment settings, including the environment variables the
 | Repository | Variables |
 |---|---|
 | Apps | `AWS_REGION`, `AWS_DEPLOY_ROLE_ARN`, `ECR_REPOSITORY_PREFIX`, `EB_APPLICATION`, `EB_ENVIRONMENT`, `EB_BUNDLE_BUCKET`, `AWS_APP_URL` |
-| Infra | `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_INFRA_ROLE_ARN`, `TFSTATE_BUCKET`, `PROJECT_NAME`, `STUDENT_INITIALS`, `ENABLE_CDN` |
+| Infra | `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_INFRA_ROLE_ARN`, `TFSTATE_BUCKET`, `PROJECT_NAME`, `STUDENT_INITIALS`, `ENABLE_CDN` (P2 adds the secret `TEAMS_WEBHOOK_URL`, set by hand) |
 
 Azure and AWS can coexist in the Apps repo; each cloud deploys only if its variable exists (`AZURE_CLIENT_ID` / `AWS_DEPLOY_ROLE_ARN`).
 
@@ -97,11 +101,37 @@ Azure and AWS can coexist in the Apps repo; each cloud deploys only if its varia
 | Symptom | Fix |
 |---|---|
 | `Not logged in to AWS` / `session has expired` | `aws login --profile cc2026` (or `aws sso login`); sessions last up to 12 h |
-| `account must be verified` (CloudFront) | New account: `ENABLE_CDN=false ./bootstrap/bootstrap.sh`, or ask AWS Support to enable CloudFront ([details](docs/aws-account-setup.md#4-free-account-issues)) |
+| `account must be verified` (CloudFront) | New account: `ENABLE_CDN=false ./bootstrap/bootstrap.sh`, or ask AWS Support to enable CloudFront ([details](docs/p1/aws-account-setup.md#4-free-account-issues)) |
 | URL shows "Congratulations" sample page | The first deployment has not finished; watch `deploy-aws` in the Apps repo |
 | `deploy-beanstalk.sh`: deployment failed | The events printed by the workflow say why; container logs: Elastic Beanstalk console → *Logs → Request last 100 lines*, or CloudWatch log group `/aws/elasticbeanstalk/cc2026-<initials>-dev/...` |
 | Containers restart / out of memory | Set `instance_type = "t3.small"` (2 GiB, ≈ USD 17.50/month) and apply |
 | Terraform: `account ... not allowed` | You are logged in to a different account than the one in `terraform.tfvars` |
 | `VPC quota reached` / `Elastic IP quota reached` | 5 per region by default; delete unused ones or request more |
 
-More: [docs/extending.md](docs/extending.md) (P2 data pipeline with S3/Glue, P3 sign-in with Cognito).
+## P2: data pipeline (S3, Glue, Lambda, Teams)
+
+Start with **[docs/p2/student-walkthrough.md](docs/p2/student-walkthrough.md)**. Upload a CSV to `bronze/raw/` of the data bucket. A Glue Python shell job cleans it and writes **silver** (Parquet per date, rejected rows in `silver/rejected/`, a run summary) and **gold** (JSON files in `gold/by-timestamp/<yyyyMMddTHHmmssZ>/` as history and in `gold/latest/`). One Lambda starts the job and posts the Teams card `CC2026 P2 pipeline SUCCEEDED (AWS)` when it ends.
+
+```mermaid
+flowchart LR
+    up[Upload CSV] --> b[(S3 bronze/raw)]
+    b -- Object Created --> eb1[EventBridge]
+    eb1 --> l[Lambda]
+    l -- start --> g[Glue job]
+    g --> s[(silver, silver/rejected)]
+    g --> h[(gold/by-timestamp)]
+    g --> lt[(gold/latest)]
+    g -- state change --> eb2[EventBridge]
+    eb2 --> l
+    l -- card --> t[Teams]
+    be[Backend, instance role] -- read --> lt
+```
+
+| Provided | You build |
+|---|---|
+| Terraform for bucket, Glue job, Lambda, rules, IAM, Teams card, backend read access to `gold/latest/` | Charts and API in the Apps repo (`docs/p2/challenge.md` there) |
+| Glue script: bronze to silver, `silver/rejected/`, three gold files (`daily_energy_by_device.json`, `energy_by_location.json`, `latest_readings.json`) | Optional: a time-grouping gold function, a data-quality rule with a test |
+
+The full CSV comes from the course channel (save it as `data/energy_readings.csv`; `mkdir -p data` first; Git ignores it). The Teams webhook URL is a secret: GitHub secret `TEAMS_WEBHOOK_URL` (terraform workflow) and `teams_webhook_url` in the git-ignored `terraform/environments/dev/teams.auto.tfvars`. Empty = no cards. Cost: a Glue run costs cents.
+
+More: [docs/extending.md](docs/extending.md) (how P2 is built, P3 sign-in with Cognito).

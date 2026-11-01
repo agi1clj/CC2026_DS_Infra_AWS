@@ -13,7 +13,7 @@
 #   6. The first deployment: runs the Apps repository's deploy-aws workflow
 #
 # Usage (from the root of the Infra repository):
-#   aws login --profile <profile>            (personal/free account, see docs/aws-account-setup.md)
+#   aws login --profile <profile>            (personal/free account, see docs/p1/aws-account-setup.md)
 #   aws sso login --profile <profile>        (organization with IAM Identity Center)
 #   gh auth login --scopes workflow
 #   AWS_PROFILE=<profile> ./bootstrap/bootstrap.sh --check   # read-only preflight, changes nothing
@@ -103,7 +103,7 @@ check_dependencies() {
   info "Checking required tools"
   local tool
   for tool in aws gh terraform git jq; do
-    command -v "$tool" >/dev/null 2>&1 || die "'$tool' is not installed. See docs/student-walkthrough.md > Tools to install first."
+    command -v "$tool" >/dev/null 2>&1 || die "'$tool' is not installed. See docs/p1/student-walkthrough.md > Tools to install first."
   done
   ok "aws, gh, terraform, git and jq are installed"
 }
@@ -119,7 +119,7 @@ check_logins() {
   fi
   local identity
   identity="$(aws sts get-caller-identity --output json 2>/dev/null)" ||
-    die "Not logged in to AWS${AWS_PROFILE:+ (profile $AWS_PROFILE)}. Run: aws login${AWS_PROFILE:+ --profile $AWS_PROFILE} (or aws sso login for Identity Center). Setup: docs/aws-account-setup.md"
+    die "Not logged in to AWS${AWS_PROFILE:+ (profile $AWS_PROFILE)}. Run: aws login${AWS_PROFILE:+ --profile $AWS_PROFILE} (or aws sso login for Identity Center). Setup: docs/p1/aws-account-setup.md"
   AWS_ACCOUNT_ID="$(jq -r .Account <<<"$identity")"
   ok "AWS account $AWS_ACCOUNT_ID as $(jq -r .Arn <<<"$identity")"
   # `gh auth status` fails if ANY stored account is invalid, so test the active github.com login directly.
@@ -264,7 +264,7 @@ check_admin_rights() {
   if aws iam simulate-principal-policy --policy-source-arn "$(role_arn_from_session "$arn")" \
     --action-names iam:CreateRole iam:CreateOpenIDConnectProvider s3:CreateBucket elasticbeanstalk:CreateEnvironment \
     --query "EvaluationResults[?EvalDecision!='allowed'].EvalActionName" --output text 2>/dev/null | grep -q '[a-z]'; then
-    problem "Your AWS identity cannot create IAM roles, OIDC providers, buckets or Elastic Beanstalk environments. Use an administrator login (see docs/aws-account-setup.md)."
+    problem "Your AWS identity cannot create IAM roles, OIDC providers, buckets or Elastic Beanstalk environments. Use an administrator login (see docs/p1/aws-account-setup.md)."
   else
     ok "Your AWS identity can create IAM roles, S3 buckets and Elastic Beanstalk environments"
   fi

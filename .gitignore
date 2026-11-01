@@ -20,3 +20,13 @@ bootstrap/bootstrap.env
 .DS_Store
 .idea/
 .vscode/
+
+# Built by Terraform (archive_file) from terraform/modules/data-pipeline/lambda/handler.py
+*.zip
+
+# P2: the 32 MB dataset comes from the course channel; never commit it
+data/energy_readings.csv
+
+# Python caches
+__pycache__/
+*.pyc
