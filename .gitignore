@@ -26,3 +26,7 @@ bootstrap/bootstrap.env
 
 # P2: the 32 MB dataset is generated locally (scripts/generate_dataset.py)
 data/energy_readings.csv
+
+# Python caches
+__pycache__/
+*.pyc
