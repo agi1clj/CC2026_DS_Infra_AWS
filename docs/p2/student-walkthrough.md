@@ -2,7 +2,7 @@
 
 You upload a CSV with 532,895 rows of energy readings (525,600 are valid). AWS cleans it and writes small JSON files. Teams tells you when it ends.
 
-**Time:** Lab 1 about 90 minutes (the pipeline). Lab 2 about 60 minutes (Teams, study the pipeline). The Terraform apply takes 5-10 minutes (Beanstalk restarts). Each Glue run takes 3-4 minutes. Cost: about USD 0.05-0.15 per Glue run, so do not run the job in a loop.
+**Time:** Lab 1 about 90 minutes (the pipeline). Lab 2 about 60 minutes (Teams, study the pipeline). The Terraform apply takes 5-10 minutes (Beanstalk restarts). Each Glue run takes 3-4 minutes. A Glue run costs cents, so do not run the job in a loop.
 
 Replace `<github-user>`, `<LastName>_<FirstName>` and `<initials>` as in the [P1 walkthrough](../p1/student-walkthrough.md). Work in your Infra repo. Run `export AWS_PROFILE=cc2026` in every new terminal.
 
@@ -21,7 +21,7 @@ Terms: **S3** is file storage (a **prefix** is a folder name). **Parquet** is a 
 - **Silver** = the rows we trust: typed (real timestamp and numbers), one row per `device_id` + `timestamp`, stored as Parquet in `silver/energy_readings/date=2025-11-01/`. Rows that break a rule go to `silver/rejected/` with a **`reject_reason`** column (why the row was rejected).
 - **Gold** = what the dashboard asks: small JSON files. 288 silver readings of one day become 1 record `{"device_id":"device-001","date":"2025-11-01","total_kwh":18.419,...}`.
 
-Flow: upload to `bronze/raw/*.csv`, EventBridge calls the Lambda, the Lambda starts the Glue job. The job writes `silver/` and `gold/`. The job also writes a **run summary** (`silver/_run_summary.json`): rows in, rows in silver, rows rejected, duplicates removed. When the job ends, the Lambda posts a Teams card.
+Flow: upload to `bronze/raw/*.csv`, EventBridge calls the Lambda, the Lambda starts the Glue job. The job writes `silver/` and `gold/`. The job also writes the **run summary** (`silver/_run_summary.json`): rows in, rows in silver, rows rejected, duplicates removed. When the job ends, the Lambda posts a Teams card.
 
 Every run writes gold files twice: to `gold/by-timestamp/<yyyyMMddTHHmmssZ>/` (history, never deleted) and to `gold/latest/` (overwritten, written last). The backend reads `gold/latest/` only, so 500,000 rows never reach the browser.
 
@@ -67,10 +67,9 @@ BUCKET=$(terraform -chdir=terraform/environments/dev output -raw data_bucket_nam
 
 ## 3. Get the data and upload it
 
-Download `energy_readings.csv` from the course channel (Teams, Files) and save it as `data/energy_readings.csv`. It has 532,895 rows and 32 MB. Git ignores this file. Check it:
+Create the folder `data/` (`mkdir -p data`). Download `energy_readings.csv` from the course channel (Teams, Files) and save it as `data/energy_readings.csv`. It has 532,895 rows and 32 MB. Git ignores this file. Check it:
 
 ```bash
-mkdir -p data                      # then save the file in data/
 wc -l data/energy_readings.csv    # 532896 (the header counts)
 head -3 data/energy_readings.csv  # device_id,timestamp,temperature,humidity,kwh,location
 ```
@@ -155,11 +154,10 @@ Upload `energy_readings.csv` again (console or CLI). Teams shows a green card **
 Open `terraform/modules/data-pipeline/glue/energy_etl.py`. Read it in this order, so you can explain each layer:
 
 1. `clean(raw)`: types the columns, applies the rules, splits **rejected** rows (with `reject_reason`) from valid rows, removes duplicates, adds `date`.
-2. `check_reject_ratio` and `check_valid_rows`: safety checks that run before any write.
-3. `write_silver`: Parquet per date, `silver/rejected/rejected_rows.csv`, `silver/_run_summary.json`.
-4. `gold_daily_by_device`, `gold_by_location`, `gold_latest_readings`: each takes the silver table and returns a list of records (`groupby` + `agg`, or sort + `head(200)`).
-5. `GOLD_OUTPUTS`: the file name of each gold function.
-6. `write_gold`: writes `gold/by-timestamp/<time>/` first and `gold/latest/` last, so `latest` changes only after a complete run.
+2. `write_silver`: Parquet per date, `silver/rejected/rejected_rows.csv`, `silver/_run_summary.json` (the run summary).
+3. `gold_daily_by_device`, `gold_by_location`, `gold_latest_readings`: each takes the silver table and returns a list of records (`groupby` + `agg`, or sort + `head(200)`).
+4. `GOLD_OUTPUTS`: the file name of each gold function.
+5. `write_gold`: writes `gold/by-timestamp/<time>/` first and `gold/latest/` last, so `latest` changes only after a complete run.
 
 **Lab 2 is done when** you can explain, for one row of bronze, where it ends up: silver, `silver/rejected/` or removed as a duplicate, and in which gold files it counts.
 
