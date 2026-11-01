@@ -109,7 +109,7 @@ Azure and AWS can coexist in the Apps repo; each cloud deploys only if its varia
 
 ## P2: data pipeline (S3, Glue, Lambda, Teams)
 
-Start with **[docs/p2/student-walkthrough.md](docs/p2/student-walkthrough.md)**. An upload to `s3://<bucket>/bronze/raw/*.csv` starts a Glue Python shell job (through EventBridge and one Lambda). The job writes clean Parquet to `silver/` (one folder per date) and JSON files to `gold/by-timestamp/<run time>/` (history) and `gold/latest/` (what the backend reads). The same Lambda posts a Teams card titled `CC2026 P2 pipeline SUCCEEDED (AWS)`, `FAILED (AWS)` or `SKIPPED (AWS)` (a run was already active).
+Start with **[docs/p2/student-walkthrough.md](docs/p2/student-walkthrough.md)**. An upload to `s3://<bucket>/bronze/raw/*.csv` starts a Glue Python shell job (through EventBridge and one Lambda). The job writes clean Parquet to `silver/` (one folder per date) and JSON files to `gold/by-timestamp/<run time>/` (history) and `gold/latest/` (what the backend reads). The same Lambda posts a Teams card titled `CC2026 P2 pipeline SUCCEEDED (AWS)` when the job ends.
 
 | Provided | You build |
 |---|---|

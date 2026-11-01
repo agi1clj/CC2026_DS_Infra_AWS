@@ -2,7 +2,7 @@
 
 You upload a CSV with 532,895 rows of energy readings (525,600 are valid). AWS cleans it and writes small JSON files. Teams tells you when it ends.
 
-**Time:** Lab 1 about 90 minutes (the pipeline). Lab 2 about 60 minutes (Teams, failing runs, study the pipeline). The Terraform apply takes 5-10 minutes (Beanstalk restarts). Each Glue run takes 3-4 minutes. Cost: about USD 0.05-0.15 per Glue run, so do not run the job in a loop.
+**Time:** Lab 1 about 90 minutes (the pipeline). Lab 2 about 60 minutes (Teams, study the pipeline). The Terraform apply takes 5-10 minutes (Beanstalk restarts). Each Glue run takes 3-4 minutes. Cost: about USD 0.05-0.15 per Glue run, so do not run the job in a loop.
 
 Replace `<github-user>`, `<LastName>_<FirstName>` and `<initials>` as in the [P1 walkthrough](../p1/student-walkthrough.md). Work in your Infra repo. Run `export AWS_PROFILE=cc2026` in every new terminal.
 
@@ -82,7 +82,7 @@ Upload the CSV in the S3 console:
 
 The upload starts the pipeline. Only `.csv` files under `bronze/raw/` count. CLI alternative: `aws s3 cp data/energy_readings.csv "s3://$BUCKET/bronze/raw/energy_readings.csv"`
 
-Bronze has the problems of real sensor data. The job rejects the invalid rows and removes duplicates:
+Bronze has the problems of real sensor data. The job saves bad rows in `silver/rejected/` with a reason and removes duplicates:
 
 | Problem (`reject_reason`) | Rows | Example row |
 |---|---|---|
@@ -92,7 +92,7 @@ Bronze has the problems of real sensor data. The job rejects the invalid rows an
 | Temperature outside -40..60, e.g. `-999` (`temperature_out_of_range`) | 540 | `device-001,2025-11-02T19:30:00Z,-999.0,56.25,0.0619,Office-A` |
 | Duplicates (kept once, not rejected) | 2,110 | the same `device_id` and `timestamp` twice |
 
-The raw file has 532,895 rows: 525,600 clean readings plus 7,295 bad rows. The job fails, and writes nothing, if more than 10 % of the rows are rejected.
+The raw file has 532,895 rows: 525,600 clean readings plus 7,295 bad rows.
 
 ## 4. Watch the run and check the result (console)
 
@@ -113,7 +113,7 @@ Silver has 525,600 rows, 5,185 rows are rejected, and 2,110 duplicates are gone.
 
 ---
 
-# Lab 2 — Teams, failing runs, study the pipeline (about 60 minutes)
+# Lab 2 — Teams and study the pipeline (about 60 minutes)
 
 ## 5. Add Teams (optional)
 
@@ -144,27 +144,18 @@ gh secret set TEAMS_WEBHOOK_URL --repo <github-user>/CC2026_<LastName>_<FirstNam
 - Never commit the URL. Never paste it in chat or in the README.
 - Start a manual `terraform` run with **Apply** ticked (step 2). Terraform stores the URL in SSM and the Lambda reads it.
 
-Upload `energy_readings.csv` again (console or CLI). Teams shows a green card **CC2026 P2 pipeline SUCCEEDED (AWS)** with the pipeline name, file, run id and row counts. This run also shows that the pipeline is **safe to repeat**:
+Upload `energy_readings.csv` again (console or CLI). Teams shows a green card **CC2026 P2 pipeline SUCCEEDED (AWS)** with the pipeline name, file, run id and row counts. The card can arrive up to 2 minutes after the Glue run ends. This run also shows that the pipeline is **safe to repeat**:
 
 - Same file again: silver is overwritten, a new folder appears under `gold/by-timestamp/`, and `gold/latest/` is updated.
-- Upload while a run is active: you get a yellow card **SKIPPED**. Wait for the run to end, then upload again.
+- Wait about a minute between uploads, and until the Glue run has ended.
 - A different or small file (for example `data/energy_sample.csv`) replaces silver and `gold/latest/` with its data. History stays in `gold/by-timestamp/`. Upload `energy_readings.csv` again to restore.
 
-## 6. Make runs fail on purpose
-
-Upload two files to `bronze/raw/` in the S3 console, one after the other (wait until the first run ends):
-
-- `data/energy_invalid.csv` (no `kwh` column): error `Missing required columns: kwh`.
-- `data/energy_too_dirty.csv` (half of the `kwh` values are empty): more than 10 % rejected, error `Too many rejected rows`. The job stops before it writes anything.
-
-Find the failure: **AWS Glue → ETL jobs → your job → Runs**. The run shows **Failed**. Open it: **Error message** has the text above, **Error logs** has the Python traceback. With Teams, you also get a red card. Silver and `gold/latest/` keep the data of the last good run (check the time stamps in S3).
-
-## 7. Study the pipeline
+## 6. Study the pipeline
 
 Open `terraform/modules/data-pipeline/glue/energy_etl.py`. Read it in this order, so you can explain each layer:
 
 1. `clean(raw)`: types the columns, applies the rules, splits **rejected** rows (with `reject_reason`) from valid rows, removes duplicates, adds `date`.
-2. `check_reject_ratio`: stops the run before any write if more than 10 % of the rows are rejected.
+2. `check_reject_ratio` and `check_valid_rows`: safety checks that run before any write.
 3. `write_silver`: Parquet per date, `silver/rejected/rejected_rows.csv`, `silver/_run_summary.json`.
 4. `gold_daily_by_device`, `gold_by_location`, `gold_latest_readings`: each takes the silver table and returns a list of records (`groupby` + `agg`, or sort + `head(200)`).
 5. `GOLD_OUTPUTS`: the file name of each gold function.
@@ -195,7 +186,7 @@ Then open `docs/p2/challenge.md`. The backend can already read `gold/latest/` (`
 | Symptom | Fix |
 |---|---|
 | No Lambda log line after upload | Use exact key `bronze/raw/<name>.csv`. Check `aws s3 ls "s3://$BUCKET/bronze/raw/"` |
-| `FAILED` with a Python error after a script edit (bonus) | `aws logs tail /aws-glue/python-jobs/error --log-stream-name-prefix <run-id>` |
+| Glue run does not start working (pip install, library error) | Read the log: `aws logs tail /aws-glue/python-jobs/error --log-stream-name-prefix <run-id>`. Check the pinned versions in the job arguments |
 | Script edit not used by the job (bonus) | Start a manual `terraform` run with **Apply** ticked after the push. It uploads the script |
 | No Teams card | Search the Lambda log for `Teams notification failed` or `No Teams webhook configured`. Check secret `TEAMS_WEBHOOK_URL` and run the workflow again. Check the flow run history in Power Automate |
 
