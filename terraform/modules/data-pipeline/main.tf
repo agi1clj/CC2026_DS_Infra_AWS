@@ -99,8 +99,11 @@ resource "aws_glue_job" "etl" {
   }
 
   default_arguments = {
-    # pandas, awswrangler (and its pyarrow dependency) come preinstalled with this set.
+    # analytics = boto3 and common libraries preinstalled on Python 3.9 (pandas 1.4.2 from 2022).
     "library-set" = "analytics"
+    # Newer, pinned versions for the script (pandas 2.3 is the last release for Python 3.9).
+    # Keep in sync with the pip install step in .github/workflows/terraform.yml.
+    "--additional-python-modules" = "pandas==2.2.3,pyarrow==18.1.0,numpy==1.26.4"
   }
 
   execution_property {
@@ -150,6 +153,12 @@ data "aws_iam_policy_document" "lambda" {
     sid       = "Logs"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = ["${aws_cloudwatch_log_group.lambda.arn}:*"]
+  }
+
+  statement {
+    sid       = "ReadRunSummary"
+    actions   = ["s3:GetObject"]
+    resources = ["${var.bucket_arn}/silver/_run_summary.json"]
   }
 
   statement {
