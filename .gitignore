@@ -23,3 +23,6 @@ bootstrap/bootstrap.env
 
 # Built by Terraform (archive_file) from terraform/modules/data-pipeline/lambda/handler.py
 *.zip
+
+# P2: the 32 MB dataset is generated locally (scripts/generate_dataset.py)
+data/energy_readings.csv
