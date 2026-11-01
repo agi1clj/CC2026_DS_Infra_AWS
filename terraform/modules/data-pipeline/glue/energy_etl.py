@@ -111,10 +111,27 @@ def gold_daily_by_device(df):
 
 
 # ----- YOUR PART (see docs/p2/student-walkthrough.md) -----------------------------------
-# Write gold_by_location(df) here, in the same pattern as gold_daily_by_device:
-#   energy_by_location.json: location, total_kwh, devices, avg_kwh_per_day
-# Then remove the # in GOLD_OUTPUTS below.
+# Complete gold_by_location in the same pattern as gold_daily_by_device, then remove the #
+# in front of its line in GOLD_OUTPUTS below.
 # ----------------------------------------------------------------------------------------
+
+def gold_by_location(df):
+    """One record per location: location, total_kwh, devices, avg_kwh_per_day."""
+    raise NotImplementedError("Complete gold_by_location, then register it in GOLD_OUTPUTS")
+    by_location = (
+        df.groupby("TODO: the grouping column", as_index=False)
+        .agg(
+            total_kwh=("kwh", "sum"),
+            devices=("device_id", "TODO: count distinct values"),  # hint: "nunique"
+            days=("date", "nunique"),
+        )
+        .sort_values("location")
+    )
+    # avg_kwh_per_day = UNROUNDED total / days
+    by_location["avg_kwh_per_day"] = (by_location["total_kwh"] / by_location["days"]).round(3)
+    by_location["total_kwh"] = by_location["total_kwh"].round(3)
+    return by_location[["location", "total_kwh", "devices", "avg_kwh_per_day"]].to_dict("records")
+
 
 
 def gold_latest_readings(df):
