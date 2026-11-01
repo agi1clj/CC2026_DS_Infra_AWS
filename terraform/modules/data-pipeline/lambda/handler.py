@@ -17,7 +17,7 @@ import boto3
 GLUE_JOB_NAME = os.environ["GLUE_JOB_NAME"]
 TEAMS_WEBHOOK_PARAM = os.environ.get("TEAMS_WEBHOOK_PARAM", "")
 REGION = os.environ.get("AWS_REGION", "")
-SUMMARY_KEY = "silver/_run_summary.json"
+SUMMARY_KEY = "silver/_run_summary.json"  # written by glue/energy_etl.py
 
 glue = boto3.client("glue")
 s3 = boto3.client("s3")
@@ -25,6 +25,7 @@ ssm = boto3.client("ssm")
 
 
 def handler(event, context):
+    """Lambda entry point: route the EventBridge event by its source."""
     source = event.get("source")
     if source == "aws.s3":
         return start_job(event["detail"])
@@ -35,6 +36,7 @@ def handler(event, context):
 
 
 def start_job(detail):
+    """Start the Glue job for the new object. Post a SKIPPED card when a run is active."""
     bucket = detail["bucket"]["name"]
     key = detail["object"]["key"]
     try:
@@ -55,6 +57,7 @@ def start_job(detail):
 
 
 def notify(detail):
+    """Post the end state of a Glue run to Teams."""
     state = detail.get("state", "UNKNOWN")
     run_id = detail.get("jobRunId", "")
     message = detail.get("message") or ""
@@ -100,6 +103,7 @@ def describe_summary(bucket):
 
 
 def build_card(status, file_name, run_id, message):
+    """Adaptive Card message for Teams (status: SUCCEEDED, FAILED or SKIPPED)."""
     color = {"SUCCEEDED": "Good", "SKIPPED": "Warning"}.get(status, "Attention")
     link = f"https://{REGION}.console.aws.amazon.com/gluestudio/home?region={REGION}#/job/{GLUE_JOB_NAME}/runs"
     facts = [
@@ -140,6 +144,7 @@ def build_card(status, file_name, run_id, message):
 
 
 def post_to_teams(card):
+    """POST the card to the webhook from SSM. Never raises."""
     if not TEAMS_WEBHOOK_PARAM:
         print("No Teams webhook configured, skipping notification.")
         return
