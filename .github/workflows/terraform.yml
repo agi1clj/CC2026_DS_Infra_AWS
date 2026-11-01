@@ -56,12 +56,18 @@ jobs:
         working-directory: ${{ matrix.root }}
         run: terraform test
 
-      - name: pytest for the Glue script (versions as in the Glue job arguments)
+      - uses: actions/setup-python@v7
         if: matrix.root == 'terraform/environments/dev'
+        with:
+          python-version: "3.12" # has prebuilt wheels for the pinned packages (Glue itself runs 3.9)
+
+      - name: pytest for the Glue script
+        if: matrix.root == 'terraform/environments/dev'
+        # Versions: the same pins as "--additional-python-modules" in terraform/modules/data-pipeline/main.tf.
+        # --only-binary fails fast if a wheel is missing, instead of compiling pyarrow.
         run: |
-          python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install pandas==2.2.3 pyarrow==18.1.0 numpy==1.26.4 boto3==1.40.61 pytest==8.4.2
-          "$RUNNER_TEMP/venv/bin/pytest" terraform/modules/data-pipeline/glue
+          python -m pip install --only-binary=:all: pandas==2.2.3 pyarrow==18.1.0 numpy==1.26.4 boto3==1.40.61 pytest==8.4.2
+          python -m pytest terraform/modules/data-pipeline/glue
 
   deploy:
     needs: validate
