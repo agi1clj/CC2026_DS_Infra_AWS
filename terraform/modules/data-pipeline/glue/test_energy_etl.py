@@ -95,7 +95,10 @@ def test_gold_daily_by_device_shape():
 
 
 def test_half_empty_kwh_trips_the_reject_ratio():
-    rows = [{"timestamp": f"2025-11-01T00:{minute:02d}:00Z", "kwh": "" if minute % 2 else "0.05"} for minute in range(10)]
+    rows = [
+        {"timestamp": f"2025-11-01T00:{minute:02d}:00Z", "kwh": "" if minute % 2 else "0.05"}
+        for minute in range(10)
+    ]
     raw = frame(*rows)
     _, rejected, _ = etl.clean(raw)
     with pytest.raises(ValueError, match="Too many rejected rows"):
